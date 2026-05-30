@@ -1,0 +1,114 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@layer theme, base, clerk, components, utilities;
+@import "tailwindcss";
+@import "tw-animate-css";
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-card-border: hsl(var(--card-border));
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+
+  --font-sans: 'Inter', sans-serif;
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+}
+
+:root {
+  --background: 0 0% 3%;
+  --foreground: 0 0% 98%;
+  --border: 0 0% 15%;
+  --input: 0 0% 15%;
+  --ring: 355 78% 56%;
+
+  --card: 0 0% 6%;
+  --card-foreground: 0 0% 98%;
+  --card-border: 0 0% 12%;
+
+  --primary: 355 78% 56%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 290 50% 35%;
+  --secondary-foreground: 0 0% 100%;
+
+  --muted: 0 0% 15%;
+  --muted-foreground: 0 0% 65%;
+
+  --accent: 355 78% 56%;
+  --accent-foreground: 0 0% 100%;
+
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 98%;
+  
+  --popover: 0 0% 6%;
+  --popover-foreground: 0 0% 98%;
+  --popover-border: 0 0% 12%;
+}
+
+.dark {
+  --background: 0 0% 3%;
+  --foreground: 0 0% 98%;
+  --border: 0 0% 15%;
+  --input: 0 0% 15%;
+  --ring: 355 78% 56%;
+
+  --card: 0 0% 6%;
+  --card-foreground: 0 0% 98%;
+  --card-border: 0 0% 12%;
+
+  --primary: 355 78% 56%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 290 50% 35%;
+  --secondary-foreground: 0 0% 100%;
+
+  --muted: 0 0% 15%;
+  --muted-foreground: 0 0% 65%;
+
+  --accent: 355 78% 56%;
+  --accent-foreground: 0 0% 100%;
+
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 98%;
+  
+  --popover: 0 0% 6%;
+  --popover-foreground: 0 0% 98%;
+  --popover-border: 0 0% 12%;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    background-image: radial-gradient(circle at top right, rgba(230, 57, 70, 0.15) 0%, transparent 40%),
+                      radial-gradient(circle at bottom left, rgba(123, 45, 139, 0.15) 0%, transparent 40%);
+    background-attachment: fixed;
+  }
+}

@@ -1,0 +1,279 @@
+MADARA MUSIC — ADVANCED AI APP GENERATION PROMPT
+
+Create a full-stack premium music streaming application named Madara Music with a futuristic Apple-level UI/UX design inspired by Spotify, Apple Music, Netflix, and modern iOS interfaces.
+
+The application should look extremely premium, cinematic, smooth, glassmorphism-based, animated, and production-level. The UI should feel modern like Apple’s latest ecosystem apps with smooth transitions, motion blur, parallax scrolling, floating components, adaptive gradients, hover animations, dynamic lighting, and immersive fullscreen experiences.
+
+CORE APP CONCEPT
+
+Madara Music is a fully free premium-style music streaming app with:
+
+- Background music playback
+- Background downloading
+- Ad-free experience
+- Playlist management
+- Favorites system
+- Offline downloads
+- Search functionality
+- Music recommendations
+- Queue system
+- Repeat/shuffle modes
+- Modern player animations
+- Floating mini-player
+- Real-time audio visualizer
+- Cross-device responsive design
+
+The app should work similarly to Spotify Premium but fully free.
+
+---
+
+DESIGN STYLE
+
+UI Inspiration
+
+- Apple Music
+- Spotify
+- Netflix
+- Dynamic Island animations
+- iOS 18 design language
+- VisionOS glass effects
+- Cinematic anime-inspired dark theme
+
+Main Theme
+
+- Dark mode by default
+- Black + deep red + purple glow aesthetics
+- Glassmorphism cards
+- Blur backgrounds
+- Smooth shadows
+- Neon accent lighting
+- Animated gradients
+- Cinematic transitions
+
+Animation Requirements
+
+Use advanced smooth animations everywhere:
+
+- Scroll-based animations
+- Floating UI movement
+- Parallax effects
+- Smooth page transitions
+- Framer Motion animations
+- Dynamic hover effects
+- Music visualizer animations
+- Animated loading screens
+- Smooth mini-player transitions
+- Expandable music player animation like Apple Music
+
+Animations must be smooth at 60FPS.
+
+---
+
+MAIN FEATURES
+
+AUTH SYSTEM
+
+- Email login/signup
+- Google authentication
+- Guest mode
+- Persistent sessions
+
+---
+
+MUSIC SYSTEM
+
+Search Engine
+
+Implement a music search system using alternative search/proxy methods instead of official YouTube APIs.
+
+The app should:
+
+- Search songs instantly
+- Fetch song thumbnails
+- Fetch metadata
+- Stream music
+- Stream audio only
+- Avoid API limits
+- Support unlimited searching
+
+Use scalable proxy architecture.
+
+---
+
+MUSIC PLAYER
+
+Advanced Audio Player
+
+Features:
+
+- Background playback
+- Continue playback after app closes/minimizes
+- Lockscreen controls
+- Media notification controls
+- Play/pause
+- Next/previous
+- Shuffle
+- Repeat
+- Seek bar
+- Lyrics support
+- Queue management
+- Sleep timer
+- Playback speed control
+- Crossfade transitions
+
+Mini Player
+
+- Floating bottom mini-player
+- Expand animation into fullscreen player
+- Glassmorphism effect
+- Real-time blur background
+- Animated album art rotation
+
+---
+
+DOWNLOAD SYSTEM
+
+Offline Downloading
+
+- Download music in background
+- Continue download when minimized
+- Download progress tracking
+- Download quality options
+- Offline mode support
+- Local storage management
+- Resume interrupted downloads
+
+---
+
+PLAYLIST SYSTEM
+
+User Features
+
+- Create playlists
+- Edit playlists
+- Public/private playlists
+- Add/remove songs
+- Favorite songs
+- Recently played
+- Most played
+- Liked songs collection
+
+---
+
+HOME SCREEN
+
+Create a highly cinematic homepage with:
+
+- Hero animated banner
+- Recommended music carousel
+- Trending section
+- Recently played
+- Personalized mixes
+- Smooth horizontal sliders
+- Dynamic animated backgrounds
+
+---
+
+APP STRUCTURE
+
+Pages
+
+- Splash screen
+- Login/signup
+- Home
+- Search
+- Library
+- Playlist page
+- Music player page
+- Downloads page
+- Settings page
+- Profile page
+
+---
+
+TECH STACK
+
+Use:
+
+- React / Next.js
+- Tailwind CSS
+- Framer Motion
+- Node.js backend
+- Express server
+- MongoDB or Supabase
+- PWA support
+- Service workers
+- IndexedDB for offline storage
+
+---
+
+MOBILE APP REQUIREMENTS
+
+The app should behave like a real mobile application:
+
+- Installable PWA
+- Fullscreen mode
+- Native-like gestures
+- Responsive UI
+- Android/iOS optimized
+- Smooth touch animations
+
+---
+
+ADVANCED EFFECTS
+
+Include:
+
+- Apple-style blur navigation
+- Dynamic navbar transparency
+- Animated gradients
+- Music reactive effects
+- GPU-accelerated animations
+- Cinematic onboarding
+- Advanced loading animations
+- 3D hover effects
+
+---
+
+PERFORMANCE REQUIREMENTS
+
+- Extremely optimized
+- Fast loading
+- Lazy loading
+- Infinite scrolling
+- Efficient caching
+- Smooth transitions
+- No lag animations
+
+---
+
+BRANDING
+
+App Name: Madara Music
+
+Logo Style:
+
+- Anime-inspired
+- Red glowing eye aesthetic
+- Minimal futuristic logo
+- Premium typography
+
+Tagline:
+“Unlimited Music. Unlimited Power.”
+
+---
+
+EXTRA REQUIREMENTS
+
+- Fully modern production-level UI
+- Very premium feel
+- Smoothest possible animations
+- Advanced responsive layout
+- Realistic app behavior
+- Spotify Premium-like experience
+- No ads anywhere
+- Beautiful dark aesthetic
+- Cinematic interactions
+- Apple-level UX polish
+
+Generate the complete production-ready application with clean architecture, scalable folder structure, reusable components, optimized performance, and highly polished UI/UX.
