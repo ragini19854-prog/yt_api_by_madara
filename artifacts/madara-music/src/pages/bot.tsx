@@ -700,10 +700,53 @@ const SETUP_STEPS = {
   ],
 };
 
+const DISCORD_REQUIREMENTS = `# requirements.txt — Discord Bot (youtube.py)
+# Install with: pip install -r requirements.txt
+
+discord.py>=2.3.2
+yt-dlp>=2024.3.10
+aiohttp>=3.9.3
+PyNaCl>=1.5.0
+
+# System dependency (not pip):
+#   Linux:   sudo apt install ffmpeg
+#   Mac:     brew install ffmpeg
+#   Windows: https://ffmpeg.org/download.html
+`;
+
+const TELEGRAM_REQUIREMENTS = `# requirements.txt — Telegram Bot (telegram.py)
+# Install with: pip install -r requirements.txt
+
+python-telegram-bot>=20.7
+yt-dlp>=2024.3.10
+aiohttp>=3.9.3
+
+# System dependency (not pip):
+#   Linux:   sudo apt install ffmpeg
+#   Mac:     brew install ffmpeg
+#   Windows: https://ffmpeg.org/download.html
+`;
+
+const MANAGER_REQUIREMENTS = `# requirements.txt — Bot Manager (manager.py)
+# Install requirements for whichever bot type you run:
+#
+#   Discord bots:  pip install -r requirements_discord.txt
+#   Telegram bots: pip install -r requirements_telegram.txt
+#
+# The manager itself uses only Python standard library — no extra packages.
+
+# Optionally create a combined file:
+discord.py>=2.3.2
+python-telegram-bot>=20.7
+yt-dlp>=2024.3.10
+aiohttp>=3.9.3
+PyNaCl>=1.5.0
+`;
+
 const TAB_META = {
-  discord:  { label: "Discord Bot",   icon: <Bot className="w-4 h-4" />,    file: "youtube.py",  code: DISCORD_BOT_CODE,  color: "text-indigo-400"  },
-  telegram: { label: "Telegram Bot",  icon: <Send className="w-4 h-4" />,   file: "telegram.py", code: TELEGRAM_BOT_CODE, color: "text-sky-400"     },
-  manager:  { label: "100+ Bots",     icon: <Server className="w-4 h-4" />, file: "manager.py",  code: MANAGER_CODE,      color: "text-emerald-400" },
+  discord:  { label: "Discord Bot",   icon: <Bot className="w-4 h-4" />,    file: "youtube.py",  code: DISCORD_BOT_CODE,  requirements: DISCORD_REQUIREMENTS,  reqFile: "requirements.txt", color: "text-indigo-400"  },
+  telegram: { label: "Telegram Bot",  icon: <Send className="w-4 h-4" />,   file: "telegram.py", code: TELEGRAM_BOT_CODE, requirements: TELEGRAM_REQUIREMENTS, reqFile: "requirements.txt", color: "text-sky-400"     },
+  manager:  { label: "100+ Bots",     icon: <Server className="w-4 h-4" />, file: "manager.py",  code: MANAGER_CODE,      requirements: MANAGER_REQUIREMENTS,  reqFile: "requirements.txt", color: "text-emerald-400" },
 };
 
 function CodeBlock({ filename, code }: { filename: string; code: string }) {
@@ -945,8 +988,11 @@ export default function BotPage() {
         </div>
       </div>
 
-      {/* Code block */}
-      <CodeBlock filename={meta.file} code={meta.code} />
+      {/* Code files */}
+      <div className="space-y-6">
+        <CodeBlock filename={meta.file} code={meta.code} />
+        <CodeBlock filename={meta.reqFile} code={meta.requirements} />
+      </div>
 
       {/* Footer */}
       <div className="text-center text-white/20 text-sm pb-4 border-t border-white/5 pt-6">

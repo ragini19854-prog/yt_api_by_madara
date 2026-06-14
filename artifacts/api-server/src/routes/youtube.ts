@@ -31,6 +31,43 @@ async function invidiousFetch(path: string): Promise<unknown> {
   throw lastErr ?? new Error("All Invidious instances unreachable");
 }
 
+router.get("/music/youtube/resolve", async (req, res) => {
+  const q = typeof req.query["q"] === "string" ? req.query["q"] : "";
+  if (!q) {
+    res.status(400).json({ error: "Query parameter q is required" });
+    return;
+  }
+  try {
+    const data = (await invidiousFetch(
+      `/api/v1/search?q=${encodeURIComponent(q)}&type=video&page=1`,
+    )) as Array<Record<string, unknown>>;
+
+    const first = data.find((item) => item["type"] === "video");
+    if (!first) {
+      res.status(404).json({ error: "No video results found" });
+      return;
+    }
+
+    const videoId = String(first["videoId"] ?? "");
+    const thumbnails =
+      (first["videoThumbnails"] as Array<{ url: string; quality: string }>) ?? [];
+    const thumb =
+      thumbnails.find((t) => t.quality === "high")?.url ??
+      `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+
+    res.json({
+      videoId,
+      streamUrl: `/api/music/youtube/stream?videoId=${videoId}`,
+      title: String(first["title"] ?? ""),
+      duration: typeof first["lengthSeconds"] === "number" ? first["lengthSeconds"] : 0,
+      thumbnail: thumb,
+    });
+  } catch (err) {
+    req.log.error({ err }, "YouTube resolve failed");
+    res.status(500).json({ error: "YouTube resolve failed" });
+  }
+});
+
 router.get("/music/youtube/search", async (req, res) => {
   const q = typeof req.query["q"] === "string" ? req.query["q"] : "";
   const limit = Math.min(Number(req.query["limit"]) || 10, 25);
