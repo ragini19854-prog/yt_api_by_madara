@@ -24,5 +24,6 @@ export * from './playlistUpdate';
 export * from './playlistWithTracks';
 export * from './playRecord';
 export * from './searchMusicParams';
+export * from './searchYoutubeParams';
 export * from './track';
 export * from './userStats';

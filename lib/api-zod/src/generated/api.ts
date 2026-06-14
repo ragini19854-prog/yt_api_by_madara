@@ -34,7 +34,9 @@ export const SearchMusicResponseItem = zod.object({
   "thumbnail": zod.string(),
   "previewUrl": zod.string(),
   "duration": zod.number(),
-  "genre": zod.string().nullish()
+  "genre": zod.string().nullish(),
+  "source": zod.string().nullish().describe('Source of the track: \'itunes\' or \'youtube\''),
+  "videoId": zod.string().nullish().describe('YouTube video ID if source is youtube')
 })
 export const SearchMusicResponse = zod.array(SearchMusicResponseItem)
 
@@ -56,7 +58,9 @@ export const GetTrendingResponseItem = zod.object({
   "thumbnail": zod.string(),
   "previewUrl": zod.string(),
   "duration": zod.number(),
-  "genre": zod.string().nullish()
+  "genre": zod.string().nullish(),
+  "source": zod.string().nullish().describe('Source of the track: \'itunes\' or \'youtube\''),
+  "videoId": zod.string().nullish().describe('YouTube video ID if source is youtube')
 })
 export const GetTrendingResponse = zod.array(GetTrendingResponseItem)
 
@@ -69,6 +73,31 @@ export const GetGenresResponseItem = zod.object({
   "name": zod.string()
 })
 export const GetGenresResponse = zod.array(GetGenresResponseItem)
+
+
+/**
+ * @summary Search YouTube for tracks (no API key required)
+ */
+export const searchYoutubeQueryLimitDefault = 10;
+
+export const SearchYoutubeQueryParams = zod.object({
+  "q": zod.coerce.string(),
+  "limit": zod.coerce.number().default(searchYoutubeQueryLimitDefault)
+})
+
+export const SearchYoutubeResponseItem = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "artist": zod.string(),
+  "album": zod.string().nullish(),
+  "thumbnail": zod.string(),
+  "previewUrl": zod.string(),
+  "duration": zod.number(),
+  "genre": zod.string().nullish(),
+  "source": zod.string().nullish().describe('Source of the track: \'itunes\' or \'youtube\''),
+  "videoId": zod.string().nullish().describe('YouTube video ID if source is youtube')
+})
+export const SearchYoutubeResponse = zod.array(SearchYoutubeResponseItem)
 
 
 /**
@@ -89,7 +118,9 @@ export const GetMusicByGenreResponseItem = zod.object({
   "thumbnail": zod.string(),
   "previewUrl": zod.string(),
   "duration": zod.number(),
-  "genre": zod.string().nullish()
+  "genre": zod.string().nullish(),
+  "source": zod.string().nullish().describe('Source of the track: \'itunes\' or \'youtube\''),
+  "videoId": zod.string().nullish().describe('YouTube video ID if source is youtube')
 })
 export const GetMusicByGenreResponse = zod.array(GetMusicByGenreResponseItem)
 
@@ -149,7 +180,9 @@ export const GetPlaylistResponse = zod.object({
   "thumbnail": zod.string(),
   "previewUrl": zod.string(),
   "duration": zod.number(),
-  "genre": zod.string().nullish()
+  "genre": zod.string().nullish(),
+  "source": zod.string().nullish().describe('Source of the track: \'itunes\' or \'youtube\''),
+  "videoId": zod.string().nullish().describe('YouTube video ID if source is youtube')
 }))
 })
 
@@ -229,7 +262,9 @@ export const GetFavoritesResponseItem = zod.object({
   "thumbnail": zod.string(),
   "previewUrl": zod.string(),
   "duration": zod.number(),
-  "genre": zod.string().nullish()
+  "genre": zod.string().nullish(),
+  "source": zod.string().nullish().describe('Source of the track: \'itunes\' or \'youtube\''),
+  "videoId": zod.string().nullish().describe('YouTube video ID if source is youtube')
 })
 export const GetFavoritesResponse = zod.array(GetFavoritesResponseItem)
 
@@ -288,7 +323,9 @@ export const GetHistoryResponseItem = zod.object({
   "thumbnail": zod.string(),
   "previewUrl": zod.string(),
   "duration": zod.number(),
-  "genre": zod.string().nullish()
+  "genre": zod.string().nullish(),
+  "source": zod.string().nullish().describe('Source of the track: \'itunes\' or \'youtube\''),
+  "videoId": zod.string().nullish().describe('YouTube video ID if source is youtube')
 })
 export const GetHistoryResponse = zod.array(GetHistoryResponseItem)
 

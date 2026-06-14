@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Home, Search, Library, User, Settings, Download, Music } from "lucide-react";
+import { Home, Search, Library, User, Settings, Download, Music, Bot } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth, SignInButton, UserButton } from "@clerk/react";
 
@@ -11,6 +11,7 @@ export function Sidebar() {
     { href: "/", label: "Home", icon: Home },
     { href: "/search", label: "Search", icon: Search },
     { href: "/library", label: "Library", icon: Library },
+    { href: "/bot", label: "Discord Bot", icon: Bot },
   ];
 
   const bottomLinks = [

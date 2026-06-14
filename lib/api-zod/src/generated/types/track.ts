@@ -17,4 +17,14 @@ export interface Track {
   duration: number;
   /** @nullable */
   genre?: string | null;
+  /**
+     * Source of the track: 'itunes' or 'youtube'
+     * @nullable
+     */
+  source?: string | null;
+  /**
+     * YouTube video ID if source is youtube
+     * @nullable
+     */
+  videoId?: string | null;
 }

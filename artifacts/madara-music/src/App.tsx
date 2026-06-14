@@ -16,6 +16,7 @@ import Library from "./pages/library";
 import PlaylistDetail from "./pages/playlist";
 import Profile from "./pages/profile";
 import Settings from "./pages/settings";
+import BotPage from "./pages/bot";
 import NotFound from "./pages/not-found";
 
 const queryClient = new QueryClient();
@@ -161,6 +162,7 @@ function AppRouter() {
           <Route path="/playlist/:id" component={PlaylistDetail} />
           <Route path="/profile" component={Profile} />
           <Route path="/settings" component={Settings} />
+          <Route path="/bot" component={BotPage} />
           <Route component={NotFound} />
         </Switch>
       </Layout>

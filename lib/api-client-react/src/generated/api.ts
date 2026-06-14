@@ -38,6 +38,7 @@ import type {
   PlaylistUpdate,
   PlaylistWithTracks,
   SearchMusicParams,
+  SearchYoutubeParams,
   Track,
   UserStats
 } from './api.schemas';
@@ -364,6 +365,90 @@ export function useGetGenres<TData = Awaited<ReturnType<typeof getGenres>>, TErr
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetGenresQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getSearchYoutubeUrl = (params: SearchYoutubeParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/music/youtube/search?${stringifiedParams}` : `/api/music/youtube/search`
+}
+
+/**
+ * @summary Search YouTube for tracks (no API key required)
+ */
+export const searchYoutube = async (params: SearchYoutubeParams, options?: RequestInit): Promise<Track[]> => {
+
+  return customFetch<Track[]>(getSearchYoutubeUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getSearchYoutubeQueryKey = (params?: SearchYoutubeParams,) => {
+    return [
+    `/api/music/youtube/search`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getSearchYoutubeQueryOptions = <TData = Awaited<ReturnType<typeof searchYoutube>>, TError = ErrorType<unknown>>(params: SearchYoutubeParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchYoutube>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getSearchYoutubeQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof searchYoutube>>> = ({ signal }) => searchYoutube(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof searchYoutube>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type SearchYoutubeQueryResult = NonNullable<Awaited<ReturnType<typeof searchYoutube>>>
+export type SearchYoutubeQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Search YouTube for tracks (no API key required)
+ */
+
+export function useSearchYoutube<TData = Awaited<ReturnType<typeof searchYoutube>>, TError = ErrorType<unknown>>(
+ params: SearchYoutubeParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchYoutube>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getSearchYoutubeQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

@@ -97,6 +97,32 @@ paths:
                 items:
                   $ref: "#/components/schemas/Genre"
 
+  /music/youtube/search:
+    get:
+      operationId: searchYoutube
+      tags: [music]
+      summary: Search YouTube for tracks (no API key required)
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        "200":
+          description: YouTube search results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Track"
+
   /music/by-genre:
     get:
       operationId: getMusicByGenre
@@ -437,6 +463,12 @@ components:
           type: number
         genre:
           type: ["string", "null"]
+        source:
+          type: ["string", "null"]
+          description: "Source of the track: 'itunes' or 'youtube'"
+        videoId:
+          type: ["string", "null"]
+          description: "YouTube video ID if source is youtube"
 
     Genre:
       type: object
