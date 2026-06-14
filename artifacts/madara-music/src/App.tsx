@@ -145,6 +145,11 @@ function Layout({ children }: { children: React.ReactNode }) {
       <Sidebar />
       <main className="flex-1 overflow-y-auto pb-24 md:pb-0">
         <div className="min-h-full pb-24 md:pb-28">{children}</div>
+        <footer className="hidden md:flex items-center justify-center py-3 border-t border-white/5 text-white/20 text-xs gap-2 select-none">
+          <span className="w-1.5 h-1.5 rounded-full bg-primary/60 inline-block" />
+          Powered by Madara
+          <span className="w-1.5 h-1.5 rounded-full bg-primary/60 inline-block" />
+        </footer>
       </main>
       <MiniPlayer />
     </div>
