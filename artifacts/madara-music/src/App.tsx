@@ -14,6 +14,7 @@ import Home from "./pages/home";
 import Search from "./pages/search";
 import Library from "./pages/library";
 import PlaylistDetail from "./pages/playlist";
+import SharedPlaylist from "./pages/shared-playlist";
 import Profile from "./pages/profile";
 import Settings from "./pages/settings";
 import BotPage from "./pages/bot";
@@ -165,6 +166,7 @@ function AppRouter() {
           <Route path="/search" component={Search} />
           <Route path="/library" component={Library} />
           <Route path="/playlist/:id" component={PlaylistDetail} />
+          <Route path="/shared/:token" component={SharedPlaylist} />
           <Route path="/profile" component={Profile} />
           <Route path="/settings" component={Settings} />
           <Route path="/bot" component={BotPage} />

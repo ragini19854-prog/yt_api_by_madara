@@ -13,6 +13,7 @@ interface PlayerContextType {
   isMuted: boolean;
   repeatMode: "none" | "one" | "all";
   shuffle: boolean;
+  autoplay: boolean;
   isResolving: boolean;
   play: (track: Track) => void;
   pause: () => void;
@@ -24,14 +25,13 @@ interface PlayerContextType {
   toggleMute: () => void;
   toggleShuffle: () => void;
   toggleRepeat: () => void;
+  toggleAutoplay: () => void;
   addToQueue: (track: Track) => void;
   playAll: (tracks: Track[], startIndex?: number) => void;
 }
 
 const PlayerContext = createContext<PlayerContextType | null>(null);
 
-// In-memory cache: trackId → resolved YouTube stream URL
-// Survives for the lifetime of the page session so re-plays are instant.
 const resolvedUrlCache = new Map<string, string>();
 
 function isYouTubeTrack(track: Track): boolean {
@@ -42,14 +42,11 @@ function isYouTubeTrack(track: Track): boolean {
 }
 
 async function resolveFullAudio(track: Track): Promise<string> {
-  // YouTube tracks already carry the full stream URL — no resolution needed.
   if (isYouTubeTrack(track)) return track.previewUrl;
 
-  // Return cached URL for iTunes tracks that were already resolved.
   const cached = resolvedUrlCache.get(track.id);
   if (cached) return cached;
 
-  // Resolve iTunes track → YouTube full stream (no 30-second preview fallback).
   const q = encodeURIComponent(`${track.title} ${track.artist}`);
   const res = await fetch(`/api/music/youtube/resolve?q=${q}`);
   if (!res.ok) throw new Error(`YouTube resolve failed: ${res.status}`);
@@ -58,6 +55,18 @@ async function resolveFullAudio(track: Track): Promise<string> {
 
   resolvedUrlCache.set(track.id, data.streamUrl);
   return data.streamUrl;
+}
+
+async function fetchRelatedTracks(track: Track): Promise<Track[]> {
+  try {
+    const q = encodeURIComponent(`${track.title} ${track.artist}`);
+    const res = await fetch(`/api/music/youtube/search?q=${q}&limit=5`);
+    if (!res.ok) return [];
+    const data = (await res.json()) as Track[];
+    return data.filter((t) => t.id !== track.id).slice(0, 5);
+  } catch {
+    return [];
+  }
 }
 
 export function PlayerProvider({ children }: { children: ReactNode }) {
@@ -71,12 +80,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [isMuted, setIsMuted] = useState(false);
   const [repeatMode, setRepeatMode] = useState<"none" | "one" | "all">("none");
   const [shuffle, setShuffle] = useState(false);
+  const [autoplay, setAutoplay] = useState(true);
   const [isResolving, setIsResolving] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const resolveAbortRef = useRef<AbortController | null>(null);
+  const autoplayingRef = useRef(false);
   const recordPlay = useRecordPlay();
   const { user } = useUser();
+
+  const pause = useCallback(() => {
+    audioRef.current?.pause();
+    setIsPlaying(false);
+  }, []);
 
   useEffect(() => {
     const audio = new Audio();
@@ -111,7 +127,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!audioRef.current || !currentTrack) return;
 
-    // Cancel any previous in-flight resolve
     resolveAbortRef.current?.abort();
     resolveAbortRef.current = new AbortController();
     const signal = resolveAbortRef.current.signal;
@@ -178,11 +193,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setCurrentTrack(tracks[startIndex]);
   }, []);
 
-  const pause = useCallback(() => {
-    audioRef.current?.pause();
-    setIsPlaying(false);
-  }, []);
-
   const resume = useCallback(() => {
     if (audioRef.current && currentTrack) {
       audioRef.current.play();
@@ -198,14 +208,36 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         if (shuffle) nextIdx = Math.floor(Math.random() * q.length);
         else if (nextIdx >= q.length) {
           if (repeatMode === "all") nextIdx = 0;
-          else { pause(); return idx; }
+          else {
+            const trackForAutoplay = q[idx];
+            if (autoplay && trackForAutoplay && !autoplayingRef.current) {
+              autoplayingRef.current = true;
+              fetchRelatedTracks(trackForAutoplay).then((related) => {
+                autoplayingRef.current = false;
+                if (related.length > 0) {
+                  setQueue((prev) => {
+                    const newQueue = [...prev, ...related];
+                    const newIdx = prev.length;
+                    setCurrentIndex(newIdx);
+                    setCurrentTrack(newQueue[newIdx]);
+                    return newQueue;
+                  });
+                } else {
+                  pause();
+                }
+              });
+            } else if (!autoplay) {
+              pause();
+            }
+            return idx;
+          }
         }
         setCurrentTrack(q[nextIdx]);
         return nextIdx;
       });
       return q;
     });
-  }, [shuffle, repeatMode, pause]);
+  }, [shuffle, repeatMode, pause, autoplay]);
 
   const prev = useCallback(() => {
     if (currentTime > 3) { seek(0); return; }
@@ -234,6 +266,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const toggleMute = useCallback(() => setIsMuted((m) => !m), []);
   const toggleShuffle = useCallback(() => setShuffle((s) => !s), []);
+  const toggleAutoplay = useCallback(() => setAutoplay((a) => !a), []);
   const toggleRepeat = useCallback(() => {
     setRepeatMode((r) => r === "none" ? "all" : r === "all" ? "one" : "none");
   }, []);
@@ -245,9 +278,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     <PlayerContext.Provider
       value={{
         currentTrack, queue, isPlaying, currentTime, duration,
-        volume, isMuted, repeatMode, shuffle, isResolving,
+        volume, isMuted, repeatMode, shuffle, autoplay, isResolving,
         play, pause, resume, next, prev, seek, setVolume,
-        toggleMute, toggleShuffle, toggleRepeat, addToQueue, playAll,
+        toggleMute, toggleShuffle, toggleRepeat, toggleAutoplay, addToQueue, playAll,
       }}
     >
       {children}

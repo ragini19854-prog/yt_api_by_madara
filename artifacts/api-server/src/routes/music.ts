@@ -105,4 +105,30 @@ router.get("/music/by-genre", async (req, res) => {
   }
 });
 
+router.get("/music/lyrics", async (req, res) => {
+  const title = typeof req.query["title"] === "string" ? req.query["title"] : "";
+  const artist = typeof req.query["artist"] === "string" ? req.query["artist"] : "";
+  if (!title || !artist) {
+    res.status(400).json({ error: "title and artist required" });
+    return;
+  }
+  try {
+    const url = `https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`;
+    const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!response.ok) {
+      res.status(404).json({ error: "Lyrics not found" });
+      return;
+    }
+    const data = (await response.json()) as { lyrics?: string; error?: string };
+    if (data.error || !data.lyrics) {
+      res.status(404).json({ error: "Lyrics not found" });
+      return;
+    }
+    res.json({ lyrics: data.lyrics.trim() });
+  } catch (err) {
+    req.log.error({ err }, "lyrics fetch failed");
+    res.status(404).json({ error: "Lyrics not found" });
+  }
+});
+
 export default router;

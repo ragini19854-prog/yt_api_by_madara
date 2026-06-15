@@ -9,6 +9,7 @@ export const playlistsTable = pgTable("playlists", {
   coverUrl: text("cover_url"),
   userId: text("user_id").notNull(),
   isPublic: boolean("is_public").notNull().default(false),
+  shareToken: text("share_token").unique(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

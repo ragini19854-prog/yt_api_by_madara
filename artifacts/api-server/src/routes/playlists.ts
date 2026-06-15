@@ -1,8 +1,38 @@
 import { Router } from "express";
 import { db, playlistsTable, playlistTracksTable } from "@workspace/db";
 import { eq, and, sql } from "drizzle-orm";
+import { randomUUID } from "crypto";
 
 const router = Router();
+
+router.get("/playlists/share/:token", async (req, res) => {
+  const token = req.params["token"];
+  try {
+    const [playlist] = await db.select().from(playlistsTable).where(eq(playlistsTable.shareToken, token));
+    if (!playlist || !playlist.isPublic) {
+      res.status(404).json({ error: "Playlist not found" });
+      return;
+    }
+    const tracks = await db.select().from(playlistTracksTable).where(eq(playlistTracksTable.playlistId, playlist.id));
+    res.json({
+      ...playlist,
+      createdAt: playlist.createdAt.toISOString(),
+      tracks: tracks.map((t) => ({
+        id: t.trackId,
+        title: t.trackTitle,
+        artist: t.trackArtist,
+        album: null,
+        thumbnail: t.trackThumbnail,
+        previewUrl: t.previewUrl,
+        duration: t.duration,
+        genre: null,
+      })),
+    });
+  } catch (err) {
+    req.log.error({ err }, "get shared playlist failed");
+    res.status(500).json({ error: "Failed to get playlist" });
+  }
+});
 
 router.get("/playlists", async (req, res) => {
   const userId = typeof req.query["userId"] === "string" ? req.query["userId"] : "";
@@ -134,6 +164,30 @@ router.delete("/playlists/:id", async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "delete playlist failed");
     res.status(500).json({ error: "Failed to delete playlist" });
+  }
+});
+
+router.post("/playlists/:id/share", async (req, res) => {
+  const id = Number(req.params["id"]);
+  if (isNaN(id)) {
+    res.status(400).json({ error: "Invalid id" });
+    return;
+  }
+  try {
+    const [playlist] = await db.select().from(playlistsTable).where(eq(playlistsTable.id, id));
+    if (!playlist) {
+      res.status(404).json({ error: "Playlist not found" });
+      return;
+    }
+    let token = playlist.shareToken;
+    if (!token) {
+      token = randomUUID();
+    }
+    await db.update(playlistsTable).set({ shareToken: token, isPublic: true }).where(eq(playlistsTable.id, id));
+    res.json({ shareToken: token });
+  } catch (err) {
+    req.log.error({ err }, "share playlist failed");
+    res.status(500).json({ error: "Failed to share playlist" });
   }
 });
 
