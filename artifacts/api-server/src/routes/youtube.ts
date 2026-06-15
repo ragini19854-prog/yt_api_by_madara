@@ -208,4 +208,76 @@ router.get("/music/youtube/stream", async (req, res) => {
   }
 });
 
+router.get("/music/youtube/download", async (req, res) => {
+  const videoId = typeof req.query["videoId"] === "string" ? req.query["videoId"] : "";
+
+  if (!videoId || !/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
+    res.status(400).json({ error: "Invalid videoId" });
+    return;
+  }
+
+  try {
+    const data = (await invidiousFetch(
+      `/api/v1/videos/${videoId}`,
+    )) as Record<string, unknown>;
+
+    const adaptiveFormats =
+      (data["adaptiveFormats"] as Array<Record<string, unknown>>) ?? [];
+
+    const audioFormats = adaptiveFormats
+      .filter((f) => String(f["type"] ?? "").startsWith("audio/"))
+      .sort((a, b) => (Number(b["bitrate"]) || 0) - (Number(a["bitrate"]) || 0));
+
+    let audioUrl = "";
+    if (audioFormats.length > 0) {
+      audioUrl = String(audioFormats[0]["url"] ?? "");
+    } else {
+      const formatStreams =
+        (data["formatStreams"] as Array<Record<string, unknown>>) ?? [];
+      if (formatStreams.length > 0) {
+        audioUrl = String(formatStreams[0]["url"] ?? "");
+      }
+    }
+
+    if (!audioUrl) {
+      res.status(404).json({ error: "No audio stream available" });
+      return;
+    }
+
+    const parsedUrl = new URL(audioUrl);
+    const isHttps = parsedUrl.protocol === "https:";
+    const protocol = isHttps ? https : http;
+
+    const options: http.RequestOptions = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || (isHttps ? 443 : 80),
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: "GET",
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; MadaraMusic/1.0)" },
+    };
+
+    const proxyReq = protocol.request(options, (proxyRes) => {
+      const statusCode = proxyRes.statusCode ?? 200;
+      res.status(statusCode);
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Content-Disposition", `attachment; filename="${videoId}.webm"`);
+      const passHeaders = ["content-type", "content-length", "content-range", "accept-ranges"];
+      for (const h of passHeaders) {
+        if (proxyRes.headers[h]) res.setHeader(h, proxyRes.headers[h]!);
+      }
+      proxyRes.pipe(res);
+    });
+
+    proxyReq.on("error", (err) => {
+      req.log.error({ err }, "YouTube download proxy error");
+      if (!res.headersSent) res.status(502).json({ error: "Download proxy failed" });
+    });
+    req.on("close", () => proxyReq.destroy());
+    proxyReq.end();
+  } catch (err) {
+    req.log.error({ err }, "YouTube download error");
+    if (!res.headersSent) res.status(500).json({ error: "YouTube download failed" });
+  }
+});
+
 export default router;
