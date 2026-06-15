@@ -39,6 +39,8 @@ async function buildAll() {
       "re2",
       "farmhash",
       "xxhash-addon",
+      "play-opus",
+      "opusscript",
       "bufferutil",
       "utf-8-validate",
       "ssh2",

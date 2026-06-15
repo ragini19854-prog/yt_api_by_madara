@@ -124,13 +124,13 @@ CRIMSON = 0xDC143C
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async def madara_search(query: str) -> dict | None:
-    """Search Madara Music API first (searches iTunes + YouTube)."""
+    """Search Madara Music YouTube API — full songs, no 30-second limit."""
     try:
         async with aiohttp.ClientSession() as s:
             async with s.get(
-                f"{MADARA_API_URL}/music/search",
+                f"{MADARA_API_URL}/music/youtube/search",
                 params={"q": query, "limit": 5},
-                timeout=aiohttp.ClientTimeout(total=6),
+                timeout=aiohttp.ClientTimeout(total=10),
             ) as r:
                 if r.status == 200:
                     results = await r.json()
@@ -225,10 +225,14 @@ async def play(ctx, *, query: str):
     _queue.setdefault(gid, [])
     async with ctx.typing():
         track = await madara_search(query)
-        if track and track.get("previewUrl"):
+        if track and track.get("videoId"):
+            # Build absolute full-song stream URL from our own API
+            video_id = track["videoId"]
+            base = MADARA_API_URL.replace("/api", "")
+            stream_url = f"{base}/api/music/youtube/stream?videoId={video_id}"
             song = {
-                "url": track["previewUrl"],
-                "title": f"{track['title']} — {track['artist']}",
+                "url": stream_url,
+                "title": f"{track['title']} — {track.get('artist', '')}".strip(" —"),
                 "thumbnail": track.get("thumbnail", ""),
                 "duration": track.get("duration", 0),
                 "source": "Madara Music",
@@ -439,12 +443,13 @@ _queues: dict[int, list[dict]] = {}
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async def madara_search(query: str) -> dict | None:
+    """Search Madara Music YouTube API — full songs, no 30-second limit."""
     try:
         async with aiohttp.ClientSession() as s:
             async with s.get(
-                f"{MADARA_API_URL}/music/search",
+                f"{MADARA_API_URL}/music/youtube/search",
                 params={"q": query, "limit": 5},
-                timeout=aiohttp.ClientTimeout(total=6),
+                timeout=aiohttp.ClientTimeout(total=10),
             ) as r:
                 if r.status == 200:
                     results = await r.json()
@@ -454,8 +459,30 @@ async def madara_search(query: str) -> dict | None:
     return None
 
 
+async def madara_download(video_id: str) -> str | None:
+    """Download full song via Madara Music API and return temp file path."""
+    url = f"{MADARA_API_URL}/music/youtube/download?videoId={video_id}"
+    path = f"/tmp/madara_{video_id}.webm"
+    try:
+        async with aiohttp.ClientSession() as s:
+            async with s.get(url, timeout=aiohttp.ClientTimeout(total=300)) as r:
+                if r.status != 200:
+                    return None
+                with open(path, "wb") as f:
+                    async for chunk in r.content.iter_chunked(65536):
+                        f.write(chunk)
+        if os.path.exists(path) and os.path.getsize(path) > 0:
+            return path
+    except Exception:
+        pass
+    if os.path.exists(path):
+        try: os.remove(path)
+        except Exception: pass
+    return None
+
+
 def yt_download(query: str) -> str | None:
-    """Download audio and return local file path."""
+    """Fallback: download audio directly via yt-dlp and return local file path."""
     search = query if query.startswith("http") else f"ytsearch1:{query}"
     with yt_dlp.YoutubeDL(YDL_OPTS) as ydl:
         info = ydl.extract_info(search, download=True)
@@ -494,27 +521,39 @@ async def cmd_play(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     query = " ".join(ctx.args)
     msg = await update.message.reply_text(f"🔍 Searching for *{query}*...", parse_mode="Markdown")
-    # Try Madara Music API first
+    keyboard = [[InlineKeyboardButton("Open in Madara Music", url=MADARA_API_URL.replace("/api", ""))]]
+    # ── Primary: Madara Music YouTube API (full song, no 30s limit) ──
     track = await madara_search(query)
-    if track and track.get("previewUrl"):
-        caption = (
-            f"🎵 *{track['title']}*\\n"
-            f"👤 {track['artist']}\\n"
-            f"🔗 Source: Madara Music\\n\\n"
-            f"_{_MADARA_CREDIT}_"  # DO NOT REMOVE THIS LINE
-        )
-        await msg.edit_text("📥 Fetching from Madara Music...")
-        keyboard = [[InlineKeyboardButton("Open in Madara Music", url=MADARA_API_URL.replace("/api", ""))]]
-        await update.message.reply_audio(
-            audio=track["previewUrl"],
-            caption=caption,
-            parse_mode="MarkdownV2",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-        )
-        await msg.delete()
-        return
-    # Fallback to YouTube via yt-dlp
-    await msg.edit_text("📥 Downloading from YouTube...")
+    if track and track.get("videoId"):
+        video_id = track["videoId"]
+        title    = track.get("title", query)
+        artist   = track.get("artist", "")
+        await msg.edit_text(f"📥 Downloading *{title}*...", parse_mode="Markdown")
+        path = await madara_download(video_id)
+        if path:
+            caption = (
+                f"🎵 *{title}*\\n"
+                f"👤 {artist}\\n"
+                f"🔗 Full song via Madara Music\\n\\n"
+                f"_{_MADARA_CREDIT}_"  # DO NOT REMOVE THIS LINE
+            )
+            try:
+                with open(path, "rb") as f:
+                    await update.message.reply_audio(
+                        audio=f,
+                        title=title,
+                        performer=artist,
+                        caption=caption,
+                        parse_mode="MarkdownV2",
+                        reply_markup=InlineKeyboardMarkup(keyboard),
+                    )
+                await msg.delete()
+            finally:
+                try: os.remove(path)
+                except Exception: pass
+            return
+    # ── Fallback: yt-dlp direct download ─────────────────────────────
+    await msg.edit_text("📥 Downloading from YouTube (fallback)...")
     try:
         path = await asyncio.to_thread(yt_download, query)
         if not path:
@@ -525,7 +564,6 @@ async def cmd_play(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"🔗 Source: YouTube\\n\\n"
             f"_{_MADARA_CREDIT}_"  # DO NOT REMOVE THIS LINE
         )
-        keyboard = [[InlineKeyboardButton("Open in Madara Music", url=MADARA_API_URL.replace("/api", ""))]]
         with open(path, "rb") as f:
             await update.message.reply_audio(
                 audio=f,
@@ -534,7 +572,8 @@ async def cmd_play(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(keyboard),
             )
         await msg.delete()
-        import os; os.remove(path)
+        try: os.remove(path)
+        except Exception: pass
     except Exception as e:
         await msg.edit_text(f"Error: {e}")
 
@@ -548,7 +587,7 @@ async def cmd_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         async with aiohttp.ClientSession() as s:
             async with s.get(
-                f"{MADARA_API_URL}/music/search",
+                f"{MADARA_API_URL}/music/youtube/search",
                 params={"q": query, "limit": 5},
             ) as r:
                 results = await r.json() if r.status == 200 else []
@@ -560,7 +599,7 @@ async def cmd_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     text = f"🎵 *Results for '{query}':*\\n\\n"
     for i, t in enumerate(results[:5], 1):
         dur = fmt(t.get("duration", 0))
-        text += f"{i}\\. *{t['title']}* — {t['artist']} \\({dur}\\)\\n"
+        text += f"{i}\\. *{t['title']}* — {t.get('artist', 'YouTube')} \\({dur}\\)\\n"
     text += f"\\n_{_MADARA_CREDIT}_"  # DO NOT REMOVE THIS LINE
     await update.message.reply_text(text, parse_mode="MarkdownV2")
 

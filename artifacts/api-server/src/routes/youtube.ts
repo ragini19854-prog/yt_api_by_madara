@@ -1,42 +1,12 @@
-import { Router } from "express";
+import { Router, Request, Response } from "express";
 import https from "https";
 import http from "http";
+import playdl from "play-dl";
 
 const router = Router();
 
-const INVIDIOUS_INSTANCES = [
-  "https://inv.nadeko.net",
-  "https://invidious.nerdvpn.de",
-  "https://yt.artemislena.eu",
-  "https://invidious.privacydev.net",
-  "https://yewtu.be",
-];
-
-// ── Instance health tracker ────────────────────────────────────────────────
-// Tracks the last instance that succeeded so it gets tried first next time.
-// Failed instances are deprioritized for PENALTY_MS milliseconds.
-const PENALTY_MS = 30_000;
-const lastWorking: { instance: string; at: number } | null = null as never;
-const penalised = new Map<string, number>(); // instance -> penalty-until timestamp
-
-function sortedInstances(): string[] {
-  const now = Date.now();
-  const working = INVIDIOUS_INSTANCES.filter((i) => (penalised.get(i) ?? 0) < now);
-  const penalized = INVIDIOUS_INSTANCES.filter((i) => (penalised.get(i) ?? 0) >= now);
-  if (lastWorking && working.includes((lastWorking as unknown as { instance: string }).instance)) {
-    const best = (lastWorking as unknown as { instance: string }).instance;
-    return [best, ...working.filter((i) => i !== best), ...penalized];
-  }
-  return [...working, ...penalized];
-}
-
-function markFailed(instance: string) {
-  penalised.set(instance, Date.now() + PENALTY_MS);
-}
-
-// ── In-memory video info cache ─────────────────────────────────────────────
-// Avoids re-fetching /api/v1/videos/:id for stream AND download on same videoId
-const VIDEO_CACHE_TTL = 5 * 60_000; // 5 minutes
+// ── In-memory video info cache (Invidious fallback) ────────────────────────
+const VIDEO_CACHE_TTL = 5 * 60_000;
 const videoCache = new Map<string, { data: Record<string, unknown>; expiresAt: number }>();
 
 function getCachedVideo(videoId: string) {
@@ -49,34 +19,45 @@ function setCachedVideo(videoId: string, data: Record<string, unknown>) {
   videoCache.set(videoId, { data, expiresAt: Date.now() + VIDEO_CACHE_TTL });
 }
 
-// ── Core fetch: race all instances simultaneously ──────────────────────────
-// Uses Promise.any() — resolves as soon as the FIRST instance replies OK.
-// Individual timeout is 4s; failing instances are penalised for 30s.
-const PER_INSTANCE_TIMEOUT = 4_000;
+// ── Invidious fallback (used only when play-dl fails) ──────────────────────
+const INVIDIOUS_INSTANCES = [
+  "https://inv.nadeko.net",
+  "https://invidious.nerdvpn.de",
+  "https://yt.artemislena.eu",
+  "https://invidious.privacydev.net",
+  "https://yewtu.be",
+];
+
+const PENALTY_MS = 30_000;
+const penalised = new Map<string, number>();
+
+function sortedInstances(): string[] {
+  const now = Date.now();
+  return [...INVIDIOUS_INSTANCES].sort((a, b) => {
+    return (penalised.get(a) ?? 0) - (penalised.get(b) ?? 0);
+  }).filter(() => true); // always return all, sorted by penalty
+}
 
 async function invidiousFetch(path: string): Promise<unknown> {
   const instances = sortedInstances();
-
   const attempt = (instance: string): Promise<unknown> => {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), PER_INSTANCE_TIMEOUT);
+    const timer = setTimeout(() => controller.abort(), 4000);
     return fetch(`${instance}${path}`, {
       signal: controller.signal,
       headers: { "User-Agent": "MadaraMusic/1.0" },
     })
-      .then((res) => {
+      .then((r) => {
         clearTimeout(timer);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
       })
       .catch((err) => {
         clearTimeout(timer);
-        markFailed(instance);
+        penalised.set(instance, Date.now() + PENALTY_MS);
         throw err;
       });
   };
-
-  // Race all healthy instances; fall back to sequential only when all fail
   try {
     return await Promise.any(instances.map(attempt));
   } catch {
@@ -84,8 +65,7 @@ async function invidiousFetch(path: string): Promise<unknown> {
   }
 }
 
-// ── Fetch video info with cache ────────────────────────────────────────────
-async function fetchVideoInfo(videoId: string): Promise<Record<string, unknown>> {
+async function fetchVideoInfoInvidious(videoId: string): Promise<Record<string, unknown>> {
   const cached = getCachedVideo(videoId);
   if (cached) return cached;
   const data = (await invidiousFetch(`/api/v1/videos/${videoId}`)) as Record<string, unknown>;
@@ -93,33 +73,22 @@ async function fetchVideoInfo(videoId: string): Promise<Record<string, unknown>>
   return data;
 }
 
-// ── Extract best audio URL from video data ─────────────────────────────────
 function extractAudioUrl(data: Record<string, unknown>): string {
   const adaptiveFormats = (data["adaptiveFormats"] as Array<Record<string, unknown>>) ?? [];
   const audioFormats = adaptiveFormats
     .filter((f) => String(f["type"] ?? "").startsWith("audio/"))
     .sort((a, b) => (Number(b["bitrate"]) || 0) - (Number(a["bitrate"]) || 0));
-
   if (audioFormats.length > 0) return String(audioFormats[0]["url"] ?? "");
-
   const formatStreams = (data["formatStreams"] as Array<Record<string, unknown>>) ?? [];
   if (formatStreams.length > 0) return String(formatStreams[0]["url"] ?? "");
-
   return "";
 }
 
-// ── Proxy audio bytes ──────────────────────────────────────────────────────
-function proxyAudio(
-  audioUrl: string,
-  req: Parameters<Router>[0],
-  res: Parameters<Router>[1],
-  disposition?: string,
-) {
+function proxyAudioUrl(audioUrl: string, req: Request, res: Response, disposition?: string) {
   const parsedUrl = new URL(audioUrl);
   const isHttps = parsedUrl.protocol === "https:";
   const protocol = isHttps ? https : http;
   const reqRange = typeof req.headers["range"] === "string" ? req.headers["range"] : undefined;
-
   const options: http.RequestOptions = {
     hostname: parsedUrl.hostname,
     port: parsedUrl.port || (isHttps ? 443 : 80),
@@ -130,7 +99,6 @@ function proxyAudio(
       ...(reqRange ? { Range: reqRange } : {}),
     },
   };
-
   const proxyReq = protocol.request(options, (proxyRes) => {
     res.status(proxyRes.statusCode ?? 200);
     res.setHeader("Access-Control-Allow-Origin", "*");
@@ -140,38 +108,71 @@ function proxyAudio(
     }
     proxyRes.pipe(res);
   });
-
-  proxyReq.on("error", (err) => {
-    (req as unknown as { log: { error: (...a: unknown[]) => void } }).log.error(
-      { err },
-      "Audio proxy error",
-    );
-    if (!res.headersSent) res.status(502).json({ error: "Audio proxy failed" });
-  });
-
+  proxyReq.on("error", () => { if (!res.headersSent) res.status(502).json({ error: "Proxy error" }); });
   req.on("close", () => proxyReq.destroy());
   proxyReq.end();
+}
+
+// ── Stream audio: play-dl first, Invidious fallback ───────────────────────
+async function streamAudio(videoId: string, req: Request, res: Response, disposition?: string) {
+  // ── Primary: play-dl (direct YouTube, no third-party server) ─────────────
+  try {
+    const ytUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    const info = await playdl.video_info(ytUrl);
+    const fmt = info.format.find((f) => f.mimeType?.startsWith("audio/")) ?? info.format[0];
+    if (fmt?.url) {
+      // Got a direct URL — proxy it without involving play-dl streams (more reliable)
+      return proxyAudioUrl(fmt.url, req, res, disposition);
+    }
+  } catch {
+    // fall through to Invidious
+  }
+
+  // ── Fallback: Invidious ───────────────────────────────────────────────────
+  try {
+    const data = await fetchVideoInfoInvidious(videoId);
+    const audioUrl = extractAudioUrl(data);
+    if (!audioUrl) { res.status(404).json({ error: "No audio stream available" }); return; }
+    proxyAudioUrl(audioUrl, req, res, disposition);
+  } catch (err) {
+    req.log.error({ err }, "streamAudio: both play-dl and Invidious failed");
+    if (!res.headersSent) res.status(500).json({ error: "Audio stream unavailable" });
+  }
 }
 
 // ── Routes ─────────────────────────────────────────────────────────────────
 
 router.get("/music/youtube/resolve", async (req, res) => {
   const q = typeof req.query["q"] === "string" ? req.query["q"] : "";
-  if (!q) { res.status(400).json({ error: "Query parameter q is required" }); return; }
+  if (!q) { res.status(400).json({ error: "q is required" }); return; }
+  try {
+    // play-dl search
+    const results = await playdl.search(q, { limit: 1, source: { youtube: "video" } });
+    if (results.length > 0) {
+      const v = results[0];
+      const videoId = v.id ?? "";
+      const thumb = v.thumbnails?.[0]?.url ?? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+      res.json({
+        videoId,
+        streamUrl: `/api/music/youtube/stream?videoId=${videoId}`,
+        title: v.title ?? "",
+        duration: v.durationInSec ?? 0,
+        thumbnail: thumb,
+      });
+      return;
+    }
+  } catch { /* fall through */ }
+
+  // Invidious fallback
   try {
     const data = (await invidiousFetch(
       `/api/v1/search?q=${encodeURIComponent(q)}&type=video&page=1`,
     )) as Array<Record<string, unknown>>;
-
     const first = data.find((item) => item["type"] === "video");
-    if (!first) { res.status(404).json({ error: "No video results found" }); return; }
-
+    if (!first) { res.status(404).json({ error: "No results found" }); return; }
     const videoId = String(first["videoId"] ?? "");
     const thumbnails = (first["videoThumbnails"] as Array<{ url: string; quality: string }>) ?? [];
-    const thumb =
-      thumbnails.find((t) => t.quality === "high")?.url ??
-      `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
-
+    const thumb = thumbnails.find((t) => t.quality === "high")?.url ?? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
     res.json({
       videoId,
       streamUrl: `/api/music/youtube/stream?videoId=${videoId}`,
@@ -188,12 +189,38 @@ router.get("/music/youtube/resolve", async (req, res) => {
 router.get("/music/youtube/search", async (req, res) => {
   const q = typeof req.query["q"] === "string" ? req.query["q"] : "";
   const limit = Math.min(Number(req.query["limit"]) || 10, 25);
-  if (!q) { res.status(400).json({ error: "Query parameter q is required" }); return; }
+  if (!q) { res.status(400).json({ error: "q is required" }); return; }
+
+  // ── play-dl primary ───────────────────────────────────────────────────────
+  try {
+    const results = await playdl.search(q, { limit, source: { youtube: "video" } });
+    if (results.length > 0) {
+      const tracks = results.map((v) => {
+        const videoId = v.id ?? "";
+        const thumb = v.thumbnails?.[0]?.url ?? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+        return {
+          id: `yt_${videoId}`,
+          title: v.title ?? "Unknown",
+          artist: v.channel?.name ?? "YouTube",
+          album: null,
+          thumbnail: thumb,
+          previewUrl: `/api/music/youtube/stream?videoId=${videoId}`,
+          duration: v.durationInSec ?? 0,
+          genre: null,
+          source: "youtube",
+          videoId,
+        };
+      });
+      res.json(tracks);
+      return;
+    }
+  } catch { /* fall through */ }
+
+  // ── Invidious fallback ────────────────────────────────────────────────────
   try {
     const data = (await invidiousFetch(
       `/api/v1/search?q=${encodeURIComponent(q)}&type=video&page=1`,
     )) as Array<Record<string, unknown>>;
-
     const tracks = data
       .filter((item) => item["type"] === "video")
       .slice(0, limit)
@@ -217,7 +244,6 @@ router.get("/music/youtube/search", async (req, res) => {
           videoId,
         };
       });
-
     res.json(tracks);
   } catch (err) {
     req.log.error({ err }, "YouTube search failed");
@@ -230,15 +256,7 @@ router.get("/music/youtube/stream", async (req, res) => {
   if (!videoId || !/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
     res.status(400).json({ error: "Invalid videoId" }); return;
   }
-  try {
-    const data = await fetchVideoInfo(videoId);
-    const audioUrl = extractAudioUrl(data);
-    if (!audioUrl) { res.status(404).json({ error: "No audio stream available" }); return; }
-    proxyAudio(audioUrl, req, res);
-  } catch (err) {
-    req.log.error({ err }, "YouTube stream error");
-    if (!res.headersSent) res.status(500).json({ error: "YouTube stream failed" });
-  }
+  await streamAudio(videoId, req, res);
 });
 
 router.get("/music/youtube/download", async (req, res) => {
@@ -246,15 +264,7 @@ router.get("/music/youtube/download", async (req, res) => {
   if (!videoId || !/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
     res.status(400).json({ error: "Invalid videoId" }); return;
   }
-  try {
-    const data = await fetchVideoInfo(videoId);
-    const audioUrl = extractAudioUrl(data);
-    if (!audioUrl) { res.status(404).json({ error: "No audio stream available" }); return; }
-    proxyAudio(audioUrl, req, res, `attachment; filename="${videoId}.webm"`);
-  } catch (err) {
-    req.log.error({ err }, "YouTube download error");
-    if (!res.headersSent) res.status(500).json({ error: "YouTube download failed" });
-  }
+  await streamAudio(videoId, req, res, `attachment; filename="${videoId}.webm"`);
 });
 
 export default router;
