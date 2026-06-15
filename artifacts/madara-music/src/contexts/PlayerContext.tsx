@@ -30,6 +30,10 @@ interface PlayerContextType {
 
 const PlayerContext = createContext<PlayerContextType | null>(null);
 
+// In-memory cache: trackId → resolved YouTube stream URL
+// Survives for the lifetime of the page session so re-plays are instant.
+const resolvedUrlCache = new Map<string, string>();
+
 function isYouTubeTrack(track: Track): boolean {
   return (
     track.source === "youtube" ||
@@ -38,18 +42,22 @@ function isYouTubeTrack(track: Track): boolean {
 }
 
 async function resolveFullAudio(track: Track): Promise<string> {
+  // YouTube tracks already carry the full stream URL — no resolution needed.
   if (isYouTubeTrack(track)) return track.previewUrl;
-  try {
-    const q = encodeURIComponent(`${track.title} ${track.artist} official audio`);
-    const res = await fetch(`/api/music/youtube/resolve?q=${q}`);
-    if (res.ok) {
-      const data = (await res.json()) as { streamUrl?: string };
-      if (data.streamUrl) return data.streamUrl;
-    }
-  } catch {
-    // fall through to iTunes preview
-  }
-  return track.previewUrl;
+
+  // Return cached URL for iTunes tracks that were already resolved.
+  const cached = resolvedUrlCache.get(track.id);
+  if (cached) return cached;
+
+  // Resolve iTunes track → YouTube full stream (no 30-second preview fallback).
+  const q = encodeURIComponent(`${track.title} ${track.artist}`);
+  const res = await fetch(`/api/music/youtube/resolve?q=${q}`);
+  if (!res.ok) throw new Error(`YouTube resolve failed: ${res.status}`);
+  const data = (await res.json()) as { streamUrl?: string };
+  if (!data.streamUrl) throw new Error("No stream URL returned");
+
+  resolvedUrlCache.set(track.id, data.streamUrl);
+  return data.streamUrl;
 }
 
 export function PlayerProvider({ children }: { children: ReactNode }) {

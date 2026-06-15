@@ -42,8 +42,9 @@ function mapTrack(item: Record<string, unknown>) {
       ? String(item["artworkUrl100"]).replace("100x100", "300x300")
       : "https://via.placeholder.com/300",
     previewUrl: String(item["previewUrl"] ?? ""),
-    duration: typeof item["trackTimeMillis"] === "number" ? item["trackTimeMillis"] / 1000 : 30,
+    duration: typeof item["trackTimeMillis"] === "number" ? item["trackTimeMillis"] / 1000 : 0,
     genre: item["primaryGenreName"] ? String(item["primaryGenreName"]) : null,
+    source: "itunes",
   };
 }
 
