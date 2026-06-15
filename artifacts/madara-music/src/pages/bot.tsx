@@ -694,12 +694,11 @@ const SETUP_STEPS = {
     { num: "04", title: "Run 24/7", code: "python telegram.py", desc: "Add your bot's URL (port 8080) to UptimeRobot.com for free 24/7 uptime." },
   ],
   telegramvc: [
-    { num: "01", title: "Get API credentials", desc: "Go to https://my.telegram.org → API Development Tools → create an app. Copy API_ID and API_HASH." },
-    { num: "02", title: "Create a Bot", desc: "Open Telegram → @BotFather → /newbot → copy the BOT_TOKEN. Add the bot as admin to your group." },
-    { num: "03", title: "Generate STRING_SESSION", desc: "Run the helper script or use @StringSessionbot on Telegram to generate a Pyrogram string session for the assistant account." },
-    { num: "04", title: "Install dependencies", code: "pip install -r requirements.txt", desc: "Python 3.10+ required. Also install ffmpeg — see requirements.txt for OS-specific instructions." },
-    { num: "05", title: "Set env variables", desc: "Set API_ID, API_HASH, BOT_TOKEN, STRING_SESSION, MADARA_API_URL (your deployed site URL), OWNER_ID in a .env file or environment." },
-    { num: "06", title: "Run 24/7", code: "python madara_vc_bot.py", desc: "Add your server's URL (port 8080) to UptimeRobot — free pings every 5 min keep it alive 24/7. Deploy on Railway, Render, or any cloud host." },
+    { num: "01", title: "Fork or clone a VC bot", desc: "Fork madara_x_radha (or any pytgcalls bot). This Youtube.py replaces its platforms/Youtube.py file." },
+    { num: "02", title: "Replace platforms/Youtube.py", desc: "Copy this file into your bot's platforms/ folder. It replaces the original ShrutiAPI download with your own Madara Music API — same interface, no other files change." },
+    { num: "03", title: "Set MADARA_API_URL", desc: "Add one line to your .env: MADARA_API_URL=https://your-deployed-site.replit.app — that's the only config change needed in this file." },
+    { num: "04", title: "Install dependencies", code: "pip install -r requirements.txt", desc: "Python 3.10+, pyrogram, pytgcalls, aiohttp, yt-dlp, and ffmpeg (system package)." },
+    { num: "05", title: "Run your bot", code: "python -m YourBotModule", desc: "All download/search calls in the bot now go through your Madara Music API instead of any third-party service." },
   ],
   manager: [
     { num: "01", title: "List your tokens", desc: "Create tokens.txt and add one bot token per line — up to 100+ tokens supported." },
@@ -751,44 +750,33 @@ aiohttp>=3.9.3
 PyNaCl>=1.5.0
 `;
 
-const TELEGRAM_VC_BOT_CODE = `# ============================================================
-# madara_vc_bot.py — Telegram Voice Chat Music Bot
+const TELEGRAM_VC_BOT_CODE = `# ──────────────────────────────────────────────────────────────────────────
+# Youtube.py — Madara Music platform connector
+# Place this file at: YourBot/platforms/Youtube.py
 # Powered by Madara Music (https://madara-music.replit.app)
-# Architecture inspired by ShuklaMusic / madara_x_radha
-# ============================================================
+# Architecture: ShuklaMusic / madara_x_radha style
+# ──────────────────────────────────────────────────────────────────────────
 # !! WARNING !! — DO NOT REMOVE OR MODIFY THE CREDIT BELOW
 # !! Powered by Madara Music — https://madara-music.replit.app
-# !! Removing this credit violates usage terms and triggers
-# !! anti-tamper protection (100 errors/sec + sys.exit)
-# ============================================================
+# !! Removing this credit violates usage terms.
+# ──────────────────────────────────────────────────────────────────────────
 
 import asyncio
 import hashlib
 import os
+import re
 import sys
-import aiohttp
-import aiofiles
-from threading import Thread
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from collections import defaultdict
-from typing import Dict, List, Optional
+from typing import Union
 
-from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-from pytgcalls import PyTgCalls, idle
-from pytgcalls import filters as pytgf
-from pytgcalls.types import (
-    MediaStream,
-    AudioQuality,
-    ChatUpdate,
-    StreamEnded,
-    Update,
-)
+import aiohttp
+import yt_dlp
+from pyrogram.enums import MessageEntityType
+from pyrogram.types import Message
 
 # ──────────────────────────────────────────────────────────────
 # ANTI-TAMPER — DO NOT MODIFY
-_MADARA_CREDIT   = "Powered by Madara Music"
-_REQUIRED_HASH   = "9a58f69afc43874694a9dfa73b4714b69264652161e7f9377a24212a9ea48ed0"
+_MADARA_CREDIT = "Powered by Madara Music"
+_REQUIRED_HASH = "9a58f69afc43874694a9dfa73b4714b69264652161e7f9377a24212a9ea48ed0"
 
 def _verify():
     h = hashlib.sha256(_MADARA_CREDIT.encode()).hexdigest()
@@ -801,360 +789,317 @@ def _verify():
 _verify()
 # ──────────────────────────────────────────────────────────────
 
-# ══════════════════ CONFIG ════════════════════════════════════
-# Fill these in a .env file or set as environment variables.
-#
-#   API_ID          — from https://my.telegram.org (integer)
-#   API_HASH        — from https://my.telegram.org (string)
-#   BOT_TOKEN       — from @BotFather on Telegram
-#   STRING_SESSION  — Pyrogram session for the ASSISTANT userbot
-#                     Generate: python3 gen_session.py  (see below)
-#   MADARA_API_URL  — Your deployed Madara Music site (no trailing slash)
-#   OWNER_ID        — Your Telegram user ID (integer)
-# ══════════════════════════════════════════════════════════════
+# Your deployed Madara Music website URL (no trailing slash)
+# Set MADARA_API_URL in your .env or environment before running
+MADARA_API_URL = os.environ.get("MADARA_API_URL", "https://your-site.replit.app")
 
-API_ID          = int(os.environ.get("API_ID", "0"))
-API_HASH        = os.environ.get("API_HASH", "")
-BOT_TOKEN       = os.environ.get("BOT_TOKEN", "")
-STRING_SESSION  = os.environ.get("STRING_SESSION", "")
-OWNER_ID        = int(os.environ.get("OWNER_ID", "0"))
-MADARA_API_URL  = os.environ.get("MADARA_API_URL", "https://your-site.replit.app")
-PREFIX          = os.environ.get("PREFIX", "/")
-KEEPALIVE_PORT  = int(os.environ.get("PORT", "8080"))
-DOWNLOAD_DIR    = "vc_audio"
+DOWNLOAD_DIR = "downloads"
 
-os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-# ──────────────────── 24/7 KEEPALIVE SERVER ───────────────────
-class _PingHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"Madara VC Bot is alive!")
+def time_to_seconds(time):
+    stringt = str(time)
+    return sum(int(x) * 60 ** i for i, x in enumerate(reversed(stringt.split(":"))))
 
-    def log_message(self, *args):
-        pass
 
-Thread(target=lambda: HTTPServer(("0.0.0.0", KEEPALIVE_PORT), _PingHandler).serve_forever(), daemon=True).start()
-# ──────────────────────────────────────────────────────────────
-
-# ─────────────── PYROGRAM + PYTGCALLS CLIENTS ─────────────────
-# bot  = the command-handling bot (BOT_TOKEN)
-# userbot = the assistant that actually JOINS voice chat (STRING_SESSION)
-bot = Client(
-    "madara_vc_bot",
-    api_id=API_ID,
-    api_hash=API_HASH,
-    bot_token=BOT_TOKEN,
-    in_memory=True,
-)
-userbot = Client(
-    "madara_vc_assistant",
-    api_id=API_ID,
-    api_hash=API_HASH,
-    session_string=STRING_SESSION,
-    in_memory=True,
-)
-call = PyTgCalls(userbot)
-# ──────────────────────────────────────────────────────────────
-
-# queue[chat_id] = [{"title", "duration", "by", "file", "thumb"}]
-queue: Dict[int, List[dict]] = defaultdict(list)
-
-# ─────────────── MADARA MUSIC API HELPERS ─────────────────────
-async def madara_search(query: str) -> Optional[dict]:
+async def search_madara(query: str, limit: int = 1) -> list:
+    """Search tracks via Madara Music API (iTunes + YouTube, no API key)."""
     url = f"{MADARA_API_URL}/api/music/youtube/search"
     try:
         async with aiohttp.ClientSession() as s:
-            async with s.get(url, params={"q": query, "limit": 1},
-                             timeout=aiohttp.ClientTimeout(total=20)) as r:
+            async with s.get(
+                url,
+                params={"q": query, "limit": limit},
+                timeout=aiohttp.ClientTimeout(total=20),
+            ) as r:
                 if r.status != 200:
-                    return None
+                    return []
                 data = await r.json()
-                results = data if isinstance(data, list) else data.get("results", [])
-                return results[0] if results else None
+                return data if isinstance(data, list) else data.get("results", [])
     except Exception:
+        return []
+
+
+async def download_song(link: str) -> str:
+    """Download audio via Madara Music API. Returns local file path or None."""
+    video_id = link.split("v=")[-1].split("&")[0] if "v=" in link else link
+    if not video_id or len(video_id) < 3:
         return None
 
-async def madara_download(video_id: str) -> Optional[str]:
-    path = os.path.join(DOWNLOAD_DIR, f"{video_id}.webm")
-    if os.path.exists(path) and os.path.getsize(path) > 0:
-        return path
+    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+    file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.webm")
+
+    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+        return file_path  # cached
+
     url = f"{MADARA_API_URL}/api/music/youtube/download"
     try:
         async with aiohttp.ClientSession() as s:
-            async with s.get(url, params={"videoId": video_id},
-                             timeout=aiohttp.ClientTimeout(total=300)) as r:
+            async with s.get(
+                url,
+                params={"videoId": video_id},
+                timeout=aiohttp.ClientTimeout(total=300),
+            ) as r:
                 if r.status != 200:
                     return None
-                async with aiofiles.open(path, "wb") as f:
-                    async for chunk in r.content.iter_chunked(65536):
-                        await f.write(chunk)
-        if os.path.exists(path) and os.path.getsize(path) > 0:
-            return path
+                with open(file_path, "wb") as f:
+                    async for chunk in r.content.iter_chunked(131072):
+                        f.write(chunk)
+        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+            return file_path
+        return None
     except Exception:
-        pass
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except Exception:
+                pass
+        return None
+
+
+async def download_video(link: str) -> str:
+    """Download video via yt-dlp (used for video VC mode). Returns path or None."""
+    video_id = link.split("v=")[-1].split("&")[0] if "v=" in link else link
+    if not video_id or len(video_id) < 3:
+        return None
+
+    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+    file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp4")
+
+    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+        return file_path
+
+    ydl_opts = {
+        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]",
+        "outtmpl": file_path,
+        "quiet": True,
+        "no_warnings": True,
+    }
     try:
-        if os.path.exists(path):
-            os.remove(path)
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
+        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+            return file_path
+        return None
     except Exception:
-        pass
-    return None
-# ──────────────────────────────────────────────────────────────
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except Exception:
+                pass
+        return None
 
-def _fmt_dur(sec: int) -> str:
-    m, s = divmod(int(sec), 60)
-    h, m = divmod(m, 60)
-    return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
 
-def _controls(chat_id: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton("⏸ Pause",  callback_data=f"vc_pause_{chat_id}"),
-        InlineKeyboardButton("⏭ Skip",   callback_data=f"vc_skip_{chat_id}"),
-        InlineKeyboardButton("⏹ Stop",   callback_data=f"vc_stop_{chat_id}"),
-    ]])
+class YouTubeAPI:
+    def __init__(self):
+        self.base     = "https://www.youtube.com/watch?v="
+        self.regex    = r"(?:youtube\\.com|youtu\\.be)"
+        self.listbase = "https://youtube.com/playlist?list="
+        self.reg      = re.compile(r"\\x1B(?:[@-Z\\\\-_]|\\[[0-?]*[ -/]*[@-~])")
 
-async def _play_next(chat_id: int, msg: Optional[Message] = None):
-    if not queue[chat_id]:
+    async def exists(self, link: str, videoid: Union[bool, str] = None):
+        if videoid:
+            link = self.base + link
+        return bool(re.search(self.regex, link))
+
+    async def url(self, message_1: Message) -> Union[str, None]:
+        messages = [message_1]
+        if message_1.reply_to_message:
+            messages.append(message_1.reply_to_message)
+        for message in messages:
+            if message.entities:
+                for entity in message.entities:
+                    if entity.type == MessageEntityType.URL:
+                        text = message.text or message.caption
+                        return text[entity.offset : entity.offset + entity.length]
+            elif message.caption_entities:
+                for entity in message.caption_entities:
+                    if entity.type == MessageEntityType.TEXT_LINK:
+                        return entity.url
+        return None
+
+    async def details(self, link: str, videoid: Union[bool, str] = None):
+        if videoid:
+            link = self.base + link
+        if "&" in link:
+            link = link.split("&")[0]
+        results = await search_madara(link, limit=1)
+        if not results:
+            return None, None, 0, None, None
+        r            = results[0]
+        title        = r.get("title", "Unknown")
+        duration_sec = int(r.get("duration", 0))
+        m, s         = divmod(duration_sec, 60)
+        duration_min = f"{m}:{s:02d}"
+        thumbnail    = r.get("thumbnail", "")
+        vidid        = r.get("videoId") or r.get("id", "").replace("yt_", "")
+        return title, duration_min, duration_sec, thumbnail, vidid
+
+    async def title(self, link: str, videoid: Union[bool, str] = None):
+        title, *_ = await self.details(link, videoid)
+        return title or "Unknown"
+
+    async def duration(self, link: str, videoid: Union[bool, str] = None):
+        _, dur, *_ = await self.details(link, videoid)
+        return dur
+
+    async def thumbnail(self, link: str, videoid: Union[bool, str] = None):
+        _, _, _, thumb, _ = await self.details(link, videoid)
+        return thumb
+
+    async def video(self, link: str, videoid: Union[bool, str] = None):
+        if videoid:
+            link = self.base + link
+        if "&" in link:
+            link = link.split("&")[0]
+        vid = link.split("v=")[-1].split("&")[0] if "v=" in link else link
         try:
-            await call.leave_call(chat_id)
-        except Exception:
-            pass
-        return
-    track = queue[chat_id][0]
-    try:
-        await call.play(
-            chat_id,
-            MediaStream(track["file"], audio_parameters=AudioQuality.HIGH),
-        )
-    except Exception:
-        queue[chat_id].pop(0)
-        await _play_next(chat_id, msg)
-        return
-    if msg:
+            downloaded = await download_video(vid)
+            if downloaded:
+                return 1, downloaded
+            return 0, "Video download failed"
+        except Exception as e:
+            return 0, str(e)
+
+    async def playlist(self, link, limit, user_id, videoid: Union[bool, str] = None):
+        if videoid:
+            link = self.listbase + link
+        if "&" in link:
+            link = link.split("&")[0]
         try:
-            await msg.edit_text(
-                f"🎵 **Now Playing**\\n\\n"
-                f"**{track['title']}**\\n"
-                f"⏱ Duration: \`{track.get('duration', 'N/A')}\`\\n"
-                f"👤 Requested by: {track['by']}\\n\\n"
-                f"_Powered by Madara Music_",
-                reply_markup=_controls(chat_id),
-            )
+            from py_yt import Playlist
+            plist = await Playlist.get(link)
         except Exception:
-            pass
+            return []
+        videos = plist.get("videos") or []
+        return [v["id"] for v in videos[:limit] if v.get("id")]
 
-# ─────────────────── BOT COMMANDS ─────────────────────────────
-@bot.on_message(filters.command(["play", "p"], PREFIX) & filters.group)
-async def cmd_play(client: Client, message: Message):
-    query = " ".join(message.command[1:]).strip()
-    if not query:
-        await message.reply("Usage: /play <song name>")
-        return
-    msg = await message.reply("🔍 Searching Madara Music...")
-    track = await madara_search(query)
-    if not track:
-        await msg.edit("❌ No results found.")
-        return
-    video_id = track.get("videoId") or track.get("id", "").replace("yt_", "")
-    title    = track.get("title", "Unknown")
-    duration = _fmt_dur(track.get("duration", 0))
-    thumb    = track.get("thumbnail", "")
-    await msg.edit(f"⬇️ Downloading **{title}**...")
-    file_path = await madara_download(video_id)
-    if not file_path:
-        await msg.edit("❌ Download failed. Try another song.")
-        return
-    chat_id = message.chat.id
-    by = message.from_user.mention if message.from_user else "Unknown"
-    queue[chat_id].append({"title": title, "duration": duration,
-                           "by": by, "file": file_path, "thumb": thumb})
-    if len(queue[chat_id]) > 1:
-        await msg.edit(f"➕ **Added to Queue** (#{len(queue[chat_id])})\\n\\n**{title}** — \`{duration}\`")
-        return
-    await _play_next(chat_id, msg)
+    async def track(self, link: str, videoid: Union[bool, str] = None):
+        if videoid:
+            link = self.base + link
+        if "&" in link:
+            link = link.split("&")[0]
+        results = await search_madara(link, limit=1)
+        if not results:
+            return {}, None
+        r         = results[0]
+        vidid     = r.get("videoId") or r.get("id", "").replace("yt_", "")
+        dur_sec   = int(r.get("duration", 0))
+        m, s      = divmod(dur_sec, 60)
+        track_details = {
+            "title":        r.get("title", "Unknown"),
+            "link":         self.base + vidid,
+            "vidid":        vidid,
+            "duration_min": f"{m}:{s:02d}",
+            "thumb":        r.get("thumbnail", ""),
+        }
+        return track_details, vidid
 
-@bot.on_message(filters.command(["pause"], PREFIX) & filters.group)
-async def cmd_pause(_, message: Message):
-    try:
-        await call.pause(message.chat.id)
-        await message.reply("⏸ Paused.")
-    except Exception:
-        await message.reply("❌ Nothing is playing.")
+    async def slider(self, link: str, query_type: int, videoid: Union[bool, str] = None):
+        if videoid:
+            link = self.base + link
+        if "&" in link:
+            link = link.split("&")[0]
+        results = await search_madara(link, limit=max(10, query_type + 1))
+        if not results or query_type >= len(results):
+            return None, None, None, None
+        r       = results[query_type]
+        dur_sec = int(r.get("duration", 0))
+        m, s    = divmod(dur_sec, 60)
+        vidid   = r.get("videoId") or r.get("id", "").replace("yt_", "")
+        return r.get("title"), f"{m}:{s:02d}", r.get("thumbnail"), vidid
 
-@bot.on_message(filters.command(["resume"], PREFIX) & filters.group)
-async def cmd_resume(_, message: Message):
-    try:
-        await call.resume(message.chat.id)
-        await message.reply("▶️ Resumed.")
-    except Exception:
-        await message.reply("❌ Nothing to resume.")
+    async def formats(self, link: str, videoid: Union[bool, str] = None):
+        if videoid:
+            link = self.base + link
+        if "&" in link:
+            link = link.split("&")[0]
+        ytdl_opts = {"quiet": True}
+        ydl = yt_dlp.YoutubeDL(ytdl_opts)
+        with ydl:
+            formats_available = []
+            r = ydl.extract_info(link, download=False)
+            for fmt in r["formats"]:
+                try:
+                    if "dash" not in str(fmt.get("format", "")).lower():
+                        formats_available.append({
+                            "format":      fmt["format"],
+                            "filesize":    fmt.get("filesize"),
+                            "format_id":   fmt["format_id"],
+                            "ext":         fmt["ext"],
+                            "format_note": fmt.get("format_note", ""),
+                            "yturl":       link,
+                        })
+                except Exception:
+                    continue
+        return formats_available, link
 
-@bot.on_message(filters.command(["skip", "next"], PREFIX) & filters.group)
-async def cmd_skip(_, message: Message):
-    chat_id = message.chat.id
-    if not queue[chat_id]:
-        await message.reply("❌ Queue is empty.")
-        return
-    queue[chat_id].pop(0)
-    msg = await message.reply("⏭ Skipped.")
-    await _play_next(chat_id, msg)
-
-@bot.on_message(filters.command(["stop", "end"], PREFIX) & filters.group)
-async def cmd_stop(_, message: Message):
-    chat_id = message.chat.id
-    queue[chat_id].clear()
-    try:
-        await call.leave_call(chat_id)
-    except Exception:
-        pass
-    await message.reply("⏹ Stopped and cleared queue.")
-
-@bot.on_message(filters.command(["queue", "q"], PREFIX) & filters.group)
-async def cmd_queue(_, message: Message):
-    chat_id = message.chat.id
-    if not queue[chat_id]:
-        await message.reply("📭 Queue is empty.")
-        return
-    lines = [f"🎵 **Queue — {len(queue[chat_id])} track(s)**\\n"]
-    for i, t in enumerate(queue[chat_id][:10]):
-        icon = "▶️" if i == 0 else f"{i + 1}."
-        lines.append(f"{icon} **{t['title']}** — \`{t['duration']}\`")
-    if len(queue[chat_id]) > 10:
-        lines.append(f"... and {len(queue[chat_id]) - 10} more.")
-    await message.reply("\\n".join(lines))
-
-@bot.on_message(filters.command(["now", "np"], PREFIX) & filters.group)
-async def cmd_now(_, message: Message):
-    chat_id = message.chat.id
-    if not queue[chat_id]:
-        await message.reply("Nothing is playing right now.")
-        return
-    t = queue[chat_id][0]
-    await message.reply(
-        f"🎵 **Now Playing**\\n\\n**{t['title']}**\\n⏱ \`{t['duration']}\`\\n👤 {t['by']}",
-        reply_markup=_controls(chat_id),
-    )
-
-@bot.on_message(filters.command(["help"], PREFIX) & (filters.group | filters.private))
-async def cmd_help(_, message: Message):
-    await message.reply(
-        "🎵 **Madara VC Music Bot**\\n\\n"
-        "/play <song>  — Search & play in voice chat\\n"
-        "/pause        — Pause playback\\n"
-        "/resume       — Resume playback\\n"
-        "/skip         — Skip current track\\n"
-        "/stop         — Stop & clear queue\\n"
-        "/queue        — Show queue\\n"
-        "/now          — Now playing\\n\\n"
-        "_Powered by Madara Music_"
-    )
-
-# ─────────────── INLINE BUTTON CALLBACKS ──────────────────────
-@bot.on_callback_query()
-async def cb_handler(_, cb):
-    data = cb.data or ""
-    parts = data.split("_", 2)
-    if len(parts) < 3 or parts[0] != "vc":
-        return
-    action, cid_str = parts[1], parts[2]
-    chat_id = int(cid_str)
-    if action == "pause":
+    async def download(
+        self,
+        link: str,
+        mystic,
+        video: Union[bool, str] = None,
+        videoid: Union[bool, str] = None,
+        songaudio: Union[bool, str] = None,
+        songvideo: Union[bool, str] = None,
+        format_id: Union[bool, str] = None,
+        title: Union[bool, str] = None,
+    ) -> str:
+        if videoid:
+            link = self.base + link
         try:
-            await call.pause(chat_id)
-            await cb.answer("⏸ Paused")
+            if video:
+                vid        = link.split("v=")[-1].split("&")[0] if "v=" in link else link
+                downloaded = await download_video(vid)
+            else:
+                downloaded = await download_song(link)
+            if downloaded:
+                return downloaded, True
+            return None, False
         except Exception:
-            await cb.answer("Nothing playing")
-    elif action == "skip":
-        if queue[chat_id]:
-            queue[chat_id].pop(0)
-        await cb.answer("⏭ Skipped")
-        await _play_next(chat_id)
-    elif action == "stop":
-        queue[chat_id].clear()
-        try:
-            await call.leave_call(chat_id)
-        except Exception:
-            pass
-        await cb.answer("⏹ Stopped")
+            return None, False
 
-# ─────────────── PYTGCALLS STREAM EVENTS ──────────────────────
-@call.on_update()
-async def on_vc_update(_, update: Update):
-    if isinstance(update, StreamEnded):
-        chat_id = update.chat_id
-        if queue[chat_id]:
-            queue[chat_id].pop(0)
-        await _play_next(chat_id)
-    elif isinstance(update, ChatUpdate):
-        if update.status in (
-            ChatUpdate.Status.KICKED,
-            ChatUpdate.Status.LEFT_GROUP,
-            ChatUpdate.Status.CLOSED_VOICE_CHAT,
-        ):
-            queue[update.chat_id].clear()
 
-# ──────────────────────────────── STARTUP ─────────────────────
-async def main():
-    await bot.start()
-    await userbot.start()
-    await call.start()
-    print(f"✅ Madara VC Bot started — keepalive on port {KEEPALIVE_PORT}")
-    print(f"   API: {MADARA_API_URL}")
-    print(f"   Powered by Madara Music")
-    await idle()
-    await call.stop()
-    await userbot.stop()
-    await bot.stop()
-
-if __name__ == "__main__":
-    asyncio.run(main())
-
-# ──────────────── STRING SESSION HELPER ───────────────────────
-# Save this as gen_session.py and run once to get STRING_SESSION:
-#
-# from pyrogram import Client
-# import asyncio
-#
-# async def main():
-#     async with Client("session", api_id=YOUR_API_ID, api_hash="YOUR_API_HASH") as app:
-#         print(await app.export_session_string())
-#
-# asyncio.run(main())
-# ──────────────────────────────────────────────────────────────
+YouTube = YouTubeAPI()
 `;
 
-const TELEGRAM_VC_REQUIREMENTS = `# requirements.txt — Telegram VC Music Bot (madara_vc_bot.py)
+const TELEGRAM_VC_REQUIREMENTS = `# requirements.txt — Telegram VC Bot platforms/Youtube.py
 # Install with: pip install -r requirements.txt
 # Python 3.10+ required
 
+# Telegram MTProto client (bot + userbot)
 pyrogram>=2.0.106
-pytgcalls>=4.0.0
-aiohttp>=3.9.3
-aiofiles>=23.2.1
 tgcrypto>=1.2.5
 
-# Optional — faster async event loop (Linux / macOS only):
+# Voice chat streaming
+pytgcalls>=4.0.0
+py-tgcalls>=2.2.0
+
+# HTTP + file I/O
+aiohttp>=3.9.3
+aiofiles>=23.2.1
+
+# YouTube fallback (video mode & formats)
+yt-dlp>=2024.3.10
+
+# Playlist support
+py-yt>=2.0.0
+
+# Optional — faster event loop (Linux / macOS only):
 uvloop>=0.21.0
 
-# System dependency (not pip) — REQUIRED for audio playback:
+# System dependency — REQUIRED for audio/video playback:
 #   Linux:   sudo apt install ffmpeg
 #   Mac:     brew install ffmpeg
 #   Windows: https://ffmpeg.org/download.html
 
-# Environment variables required before running:
-#   API_ID          — integer  — from https://my.telegram.org
-#   API_HASH        — string   — from https://my.telegram.org
-#   BOT_TOKEN       — string   — from @BotFather on Telegram
-#   STRING_SESSION  — string   — Pyrogram session for assistant
-#   MADARA_API_URL  — string   — your deployed Madara Music URL
-#   OWNER_ID        — integer  — your Telegram user ID
+# One environment variable needed in your bot:
+#   MADARA_API_URL — your deployed Madara Music site URL
 `;
 
 const TAB_META = {
   discord:    { label: "Discord Bot",   icon: <Bot className="w-4 h-4" />,    file: "youtube.py",       code: DISCORD_BOT_CODE,       requirements: DISCORD_REQUIREMENTS,       reqFile: "requirements.txt", color: "text-indigo-400"  },
   telegram:   { label: "Telegram Bot",  icon: <Send className="w-4 h-4" />,   file: "telegram.py",      code: TELEGRAM_BOT_CODE,      requirements: TELEGRAM_REQUIREMENTS,      reqFile: "requirements.txt", color: "text-sky-400"     },
-  telegramvc: { label: "Telegram VC",   icon: <Wifi className="w-4 h-4" />,   file: "madara_vc_bot.py", code: TELEGRAM_VC_BOT_CODE,   requirements: TELEGRAM_VC_REQUIREMENTS,   reqFile: "requirements.txt", color: "text-violet-400"  },
+  telegramvc: { label: "Telegram VC",   icon: <Wifi className="w-4 h-4" />,   file: "Youtube.py",       code: TELEGRAM_VC_BOT_CODE,   requirements: TELEGRAM_VC_REQUIREMENTS,   reqFile: "requirements.txt", color: "text-violet-400"  },
   manager:    { label: "100+ Bots",     icon: <Server className="w-4 h-4" />, file: "manager.py",       code: MANAGER_CODE,           requirements: MANAGER_REQUIREMENTS,       reqFile: "requirements.txt", color: "text-emerald-400" },
 };
 
