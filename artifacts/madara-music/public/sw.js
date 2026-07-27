@@ -1,4 +1,4 @@
-const CACHE_NAME = "madara-music-v1";
+const CACHE_NAME = "madara-music-v2";
 const APP_SHELL = [
   "/",
   "/manifest.json",
@@ -22,17 +22,24 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
+  // Never intercept JS/CSS — always fetch fresh so HMR and updates work
   const url = new URL(event.request.url);
-
-  if (url.pathname.startsWith("/api/")) return;
-  if (event.request.method !== "GET") return;
+  if (
+    url.pathname.endsWith(".js") ||
+    url.pathname.endsWith(".ts") ||
+    url.pathname.endsWith(".css") ||
+    url.pathname.includes("/src/") ||
+    url.pathname.includes("/node_modules/") ||
+    url.pathname.startsWith("/api/")
+  ) {
+    return; // let browser fetch normally
+  }
 
   event.respondWith(
     caches.match(event.request).then((cached) => {
       const network = fetch(event.request).then((response) => {
-        if (response.ok && url.origin === location.origin) {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        if (response.ok) {
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, response.clone()));
         }
         return response;
       });

@@ -26,6 +26,7 @@ interface YTPlayerOptions {
 }
 interface YTPlayer {
   loadVideoById(videoId: string): void;
+  cueVideoById(videoId: string): void;
   playVideo(): void;
   pauseVideo(): void;
   seekTo(seconds: number, allowSeekAhead?: boolean): void;
@@ -38,7 +39,6 @@ interface YTPlayer {
   destroy(): void;
 }
 
-// ── Context shape (public API — same as before) ────────────────────────────
 interface PlayerContextType {
   currentTrack: Track | null;
   queue: Track[];
@@ -68,7 +68,6 @@ interface PlayerContextType {
 
 const PlayerContext = createContext<PlayerContextType | null>(null);
 
-// ── Helpers ────────────────────────────────────────────────────────────────
 function extractVideoId(track: Track): string | null {
   if (track.videoId) return track.videoId;
   try {
@@ -91,34 +90,34 @@ async function fetchRelatedTracks(track: Track): Promise<Track[]> {
   }
 }
 
-// ── Provider ───────────────────────────────────────────────────────────────
 export function PlayerProvider({ children }: { children: ReactNode }) {
-  const [currentTrack, setCurrentTrack]   = useState<Track | null>(null);
-  const [queue, setQueue]                 = useState<Track[]>([]);
-  const [currentIndex, setCurrentIndex]   = useState(-1);
-  const [isPlaying, setIsPlaying]         = useState(false);
-  const [currentTime, setCurrentTime]     = useState(0);
-  const [duration, setDuration]           = useState(0);
-  // Internal volume is 0-100 (YouTube scale); context exposes 0-1
-  const [volumeInternal, setVolumeInternal] = useState(100);
-  const [isMuted, setIsMuted]             = useState(false);
-  const [repeatMode, setRepeatMode]       = useState<"none" | "one" | "all">("none");
-  const [shuffle, setShuffle]             = useState(false);
-  const [autoplay, setAutoplay]           = useState(true);
-  const [isResolving, setIsResolving]     = useState(false);
+  const [currentTrack, setCurrentTrack]     = useState<Track | null>(null);
+  const [queue, setQueue]                   = useState<Track[]>([]);
+  const [currentIndex, setCurrentIndex]     = useState(-1);
+  const [isPlaying, setIsPlaying]           = useState(false);
+  const [currentTime, setCurrentTime]       = useState(0);
+  const [duration, setDuration]             = useState(0);
+  const [volumeInternal, setVolumeInternal] = useState(100); // 0-100 for YT API
+  const [isMuted, setIsMuted]               = useState(false);
+  const [repeatMode, setRepeatMode]         = useState<"none" | "one" | "all">("none");
+  const [shuffle, setShuffle]               = useState(false);
+  const [autoplay, setAutoplay]             = useState(true);
+  const [isResolving, setIsResolving]       = useState(false);
 
-  const ytPlayerRef      = useRef<YTPlayer | null>(null);
-  const ytReadyRef       = useRef(false);
-  const pendingVideoRef  = useRef<string | null>(null);
-  const pollRef          = useRef<ReturnType<typeof setInterval> | null>(null);
-  const autoplayingRef   = useRef(false);
-  // Stable ref so YT callbacks always call the latest next()
-  const nextRef          = useRef<() => void>(() => {});
+  const ytPlayerRef     = useRef<YTPlayer | null>(null);
+  const ytReadyRef      = useRef(false);
+  const pendingVideoRef = useRef<string | null>(null);
+  const pollRef         = useRef<ReturnType<typeof setInterval> | null>(null);
+  const autoplayingRef  = useRef(false);
+  // stable ref to latest next() so YT onStateChange closure can call it
+  const nextRef         = useRef<() => void>(() => {});
+  // prevent double-loading when play() already triggered loadVideoById
+  const userInitiatedLoadRef = useRef(false);
 
   const recordPlay = useRecordPlay();
   const { user } = useUser();
 
-  // ── Polling for currentTime (YT has no timeupdate event) ─────────────────
+  // ── Polling currentTime (YT has no timeupdate event) ──────────────────────
   const startPolling = useCallback(() => {
     if (pollRef.current) return;
     pollRef.current = setInterval(() => {
@@ -128,7 +127,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         setCurrentTime(p.getCurrentTime());
         const dur = p.getDuration();
         if (dur > 0) setDuration(dur);
-      } catch { /* player destroyed or not ready */ }
+      } catch { /* ok */ }
     }, 500);
   }, []);
 
@@ -136,52 +135,71 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
   }, []);
 
-  // ── Load YouTube IFrame API once ──────────────────────────────────────────
+  // ── Core: load a video into the YT player ─────────────────────────────────
+  // Call this synchronously inside user-gesture handlers when possible so
+  // the browser's autoplay policy allows audio without extra prompts.
+  const loadVideoIntoPlayer = useCallback((videoId: string) => {
+    setIsResolving(true);
+    setCurrentTime(0);
+    setDuration(0);
+    if (ytReadyRef.current && ytPlayerRef.current) {
+      ytPlayerRef.current.loadVideoById(videoId);
+    } else {
+      // Player not ready yet — queue the video; onReady will pick it up
+      pendingVideoRef.current = videoId;
+    }
+  }, []);
+
+  // ── Initialise YouTube IFrame Player once ─────────────────────────────────
   useEffect(() => {
     const buildPlayer = () => {
+      // Guard: only build once, and only when the container div exists
+      if (ytPlayerRef.current) return;
       const el = document.getElementById("yt-player-container");
-      if (!el || ytPlayerRef.current) return;
+      if (!el) return;
 
       const player: YTPlayer = new window.YT.Player("yt-player-container", {
         height: "1",
         width: "1",
         videoId: "",
         playerVars: {
-          autoplay: 0,
+          autoplay: 1,         // allow autoplay for loadVideoById
           controls: 0,
           disablekb: 1,
           fs: 0,
           modestbranding: 1,
           playsinline: 1,
+          iv_load_policy: 3,   // hide video annotations
           origin: window.location.origin,
         },
         events: {
           onReady: ({ target }) => {
             ytReadyRef.current = true;
             target.setVolume(volumeInternal);
+            // Play anything queued before the player was ready
             if (pendingVideoRef.current) {
               target.loadVideoById(pendingVideoRef.current);
               pendingVideoRef.current = null;
             }
           },
           onStateChange: ({ data }) => {
-            const YT_PLAYING   = 1;
-            const YT_PAUSED    = 2;
-            const YT_ENDED     = 0;
-            const YT_BUFFERING = 3;
+            const PLAYING   = 1;
+            const PAUSED    = 2;
+            const ENDED     = 0;
+            const BUFFERING = 3;
 
-            if (data === YT_PLAYING) {
+            if (data === PLAYING) {
               setIsPlaying(true);
               setIsResolving(false);
               startPolling();
-            } else if (data === YT_PAUSED) {
+            } else if (data === PAUSED) {
               setIsPlaying(false);
               stopPolling();
-            } else if (data === YT_ENDED) {
+            } else if (data === ENDED) {
               stopPolling();
               setIsPlaying(false);
               nextRef.current();
-            } else if (data === YT_BUFFERING) {
+            } else if (data === BUFFERING) {
               setIsResolving(true);
             }
           },
@@ -195,6 +213,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     };
 
     if (window.YT?.Player) {
+      // API already loaded (e.g. cached from previous navigation)
       buildPlayer();
     } else {
       window.onYouTubeIframeAPIReady = buildPlayer;
@@ -213,27 +232,24 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Load a video into the YT player ───────────────────────────────────────
-  const loadVideo = useCallback((videoId: string) => {
-    setIsResolving(true);
-    setCurrentTime(0);
-    setDuration(0);
-    if (ytReadyRef.current && ytPlayerRef.current) {
-      ytPlayerRef.current.loadVideoById(videoId);
-    } else {
-      pendingVideoRef.current = videoId;
-    }
-  }, []);
-
-  // ── React to currentTrack changes ──────────────────────────────────────────
+  // ── Record play history when currentTrack changes ─────────────────────────
+  // NOTE: video loading is done synchronously in play()/playAll()/next()/prev()
+  // so autoplay policy is respected. This effect only handles side-effects
+  // (history recording) and loads the video for programmatic track changes.
   useEffect(() => {
     if (!currentTrack) return;
-    const videoId = extractVideoId(currentTrack);
-    if (!videoId) { console.warn("No videoId for track:", currentTrack.title); return; }
 
-    loadVideo(videoId);
+    if (userInitiatedLoadRef.current) {
+      // Video already loaded by play() / playAll() in the click handler
+      userInitiatedLoadRef.current = false;
+    } else {
+      // Programmatic change (next, prev, autoplay queue)
+      const videoId = extractVideoId(currentTrack);
+      if (videoId) loadVideoIntoPlayer(videoId);
+    }
 
     if (user?.id) {
+      const videoId = extractVideoId(currentTrack);
       recordPlay.mutate({
         data: {
           userId: user.id,
@@ -241,7 +257,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           trackTitle: currentTrack.title,
           trackArtist: currentTrack.artist,
           trackThumbnail: currentTrack.thumbnail,
-          previewUrl: `/api/music/youtube/stream?videoId=${videoId}`,
+          previewUrl: currentTrack.previewUrl,
           duration: currentTrack.duration,
         },
       });
@@ -284,20 +300,46 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // ── play() — called directly from user click; load video synchronously ────
+  const play = useCallback((track: Track) => {
+    const videoId = extractVideoId(track);
+    if (videoId) {
+      userInitiatedLoadRef.current = true; // tell useEffect not to double-load
+      loadVideoIntoPlayer(videoId);        // synchronous inside click handler
+    }
+    setCurrentTrack(track);
+    setQueue((prev) => {
+      const idx = prev.findIndex((t) => t.id === track.id);
+      if (idx !== -1) { setCurrentIndex(idx); return prev; }
+      setCurrentIndex(prev.length);
+      return [...prev, track];
+    });
+  }, [loadVideoIntoPlayer]);
+
+  // ── playAll() — called from user click; load first track synchronously ────
+  const playAll = useCallback((tracks: Track[], startIndex = 0) => {
+    const track = tracks[startIndex];
+    if (!track) return;
+    const videoId = extractVideoId(track);
+    if (videoId) {
+      userInitiatedLoadRef.current = true;
+      loadVideoIntoPlayer(videoId);
+    }
+    setQueue(tracks);
+    setCurrentIndex(startIndex);
+    setCurrentTrack(track);
+  }, [loadVideoIntoPlayer]);
+
+  // ── next() — programmatic; useEffect will handle loading ──────────────────
   const next = useCallback(() => {
     setQueue((q) => {
       setCurrentIndex((idx) => {
         if (q.length === 0) return idx;
 
         if (repeatMode === "one") {
-          // Replay same track by reloading video
-          const track = q[idx];
-          if (track) {
-            const vid = extractVideoId(track);
-            if (vid && ytReadyRef.current && ytPlayerRef.current) {
-              ytPlayerRef.current.loadVideoById(vid);
-            }
-          }
+          // Re-load same video
+          const videoId = extractVideoId(q[idx]);
+          if (videoId) loadVideoIntoPlayer(videoId);
           return idx;
         }
 
@@ -306,18 +348,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           if (repeatMode === "all") {
             nextIdx = 0;
           } else {
-            const trackForAutoplay = q[idx];
-            if (autoplay && trackForAutoplay && !autoplayingRef.current) {
+            const seed = q[idx];
+            if (autoplay && seed && !autoplayingRef.current) {
               autoplayingRef.current = true;
-              fetchRelatedTracks(trackForAutoplay).then((related) => {
+              fetchRelatedTracks(seed).then((related) => {
                 autoplayingRef.current = false;
                 if (related.length > 0) {
                   setQueue((prev) => {
-                    const newQueue = [...prev, ...related];
+                    const merged = [...prev, ...related];
                     const newIdx = prev.length;
                     setCurrentIndex(newIdx);
-                    setCurrentTrack(newQueue[newIdx]);
-                    return newQueue;
+                    setCurrentTrack(merged[newIdx]);
+                    return merged;
                   });
                 } else {
                   pause();
@@ -335,11 +377,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       });
       return q;
     });
-  }, [shuffle, repeatMode, pause, autoplay]);
+  }, [shuffle, repeatMode, pause, autoplay, loadVideoIntoPlayer]);
 
-  // Keep nextRef pointing at latest next()
   useEffect(() => { nextRef.current = next; }, [next]);
 
+  // ── prev() ─────────────────────────────────────────────────────────────────
   const prev = useCallback(() => {
     if (currentTime > 3) { seek(0); return; }
     setQueue((q) => {
@@ -353,43 +395,25 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     });
   }, [currentTime, seek]);
 
-  const play = useCallback((track: Track) => {
-    setCurrentTrack(track);
-    setQueue((prev) => {
-      const existing = prev.findIndex((t) => t.id === track.id);
-      if (existing !== -1) { setCurrentIndex(existing); return prev; }
-      setCurrentIndex(prev.length);
-      return [...prev, track];
-    });
-  }, []);
-
-  const playAll = useCallback((tracks: Track[], startIndex = 0) => {
-    setQueue(tracks);
-    setCurrentIndex(startIndex);
-    setCurrentTrack(tracks[startIndex]);
-  }, []);
-
   const toggleShuffle   = useCallback(() => setShuffle((s) => !s), []);
   const toggleAutoplay  = useCallback(() => setAutoplay((a) => !a), []);
-  const toggleRepeat    = useCallback(() => {
-    setRepeatMode((r) => r === "none" ? "all" : r === "all" ? "one" : "none");
-  }, []);
-  const addToQueue = useCallback((track: Track) => {
-    setQueue((prev) => [...prev, track]);
-  }, []);
+  const toggleRepeat    = useCallback(() =>
+    setRepeatMode((r) => r === "none" ? "all" : r === "all" ? "one" : "none"), []);
+  const addToQueue = useCallback((track: Track) =>
+    setQueue((prev) => [...prev, track]), []);
 
   return (
     <PlayerContext.Provider
       value={{
         currentTrack, queue, isPlaying, currentTime, duration,
-        volume: volumeInternal / 100,   // expose as 0-1
+        volume: volumeInternal / 100,
         isMuted, repeatMode, shuffle, autoplay, isResolving,
         play, pause, resume, next, prev, seek, setVolume,
         toggleMute, toggleShuffle, toggleRepeat, toggleAutoplay, addToQueue, playAll,
       }}
     >
       {children}
-      {/* Hidden YouTube player — must be in DOM before buildPlayer() runs */}
+      {/* Hidden YouTube player container — must stay in DOM */}
       <div
         style={{ position: "fixed", top: -9999, left: -9999, width: 1, height: 1, overflow: "hidden", pointerEvents: "none" }}
         aria-hidden="true"
