@@ -85,12 +85,24 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const resolveAbortRef = useRef<AbortController | null>(null);
+  const playPromiseRef = useRef<Promise<void> | null>(null);
   const autoplayingRef = useRef(false);
   const recordPlay = useRecordPlay();
   const { user } = useUser();
 
   const pause = useCallback(() => {
-    audioRef.current?.pause();
+    const audio = audioRef.current;
+    if (!audio) return;
+    // Must wait for any pending play() promise before calling pause(),
+    // otherwise the browser throws "play interrupted by pause".
+    if (playPromiseRef.current) {
+      playPromiseRef.current.finally(() => {
+        audio.pause();
+        playPromiseRef.current = null;
+      });
+    } else {
+      audio.pause();
+    }
     setIsPlaying(false);
   }, []);
 
@@ -142,10 +154,20 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       setIsResolving(false);
 
       const audio = audioRef.current!;
+      // Pause any currently playing audio before switching src
+      if (playPromiseRef.current) {
+        await playPromiseRef.current.catch(() => {});
+        playPromiseRef.current = null;
+      }
+      audio.pause();
       audio.src = audioUrl;
 
       try {
-        await audio.play();
+        const p = audio.play();
+        playPromiseRef.current = p;
+        await p;
+        playPromiseRef.current = null;
+        if (signal.aborted) { audio.pause(); return; }
         setIsPlaying(true);
         if (user?.id) {
           recordPlay.mutate({
@@ -161,6 +183,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           });
         }
       } catch (e) {
+        playPromiseRef.current = null;
         if (!signal.aborted) console.error("Playback failed:", e);
       }
     };
