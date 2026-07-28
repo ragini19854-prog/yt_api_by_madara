@@ -246,7 +246,7 @@ MIT © [Madara](https://github.com/ragini19854-prog)
 
 <div align="center">
 
-Built with ❤️ on [Replit](https://replit.com) · Powered by YouTube Innertube API
+Built with ❤️ on Github · Powered by YouTube Innertube API
 
 ⭐ Star this repo if you found it useful!
 
