@@ -1,0 +1,33 @@
+FROM node:20-alpine AS builder
+WORKDIR /app
+
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# Copy workspace manifests
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY artifacts/api-server/package.json ./artifacts/api-server/
+COPY lib/api-client-react/package.json ./lib/api-client-react/
+COPY lib/api-spec/package.json ./lib/api-spec/
+COPY lib/db/package.json ./lib/db/
+RUN mkdir -p lib/api-zod && echo '{"name":"@workspace/api-zod","version":"0.0.0"}' > lib/api-zod/package.json
+
+# Install all deps
+RUN pnpm install --frozen-lockfile
+
+# Copy source
+COPY . .
+
+# Build
+RUN pnpm --filter @workspace/api-server run build
+
+# ── Runtime ──────────────────────────────────────────────────────────────────
+FROM node:20-alpine
+WORKDIR /app
+
+COPY --from=builder /app/artifacts/api-server/dist ./dist
+
+EXPOSE 8080
+ENV PORT=8080 NODE_ENV=production
+
+CMD ["node", "--enable-source-maps", "./dist/index.mjs"]

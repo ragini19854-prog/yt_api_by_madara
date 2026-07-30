@@ -82,19 +82,25 @@ function proxyAudioUrl(audioUrl: string, req: Request, res: Response, dispositio
 }
 
 // ── Get best audio format URL for a video ─────────────────────────────────
+// Tries multiple YouTube client types in order: TV_EMBEDDED and IOS bypass
+// most bot-detection / age-gating; ANDROID and MWEB are additional fallbacks.
 async function getAudioUrl(videoId: string): Promise<string> {
   const cached = getCachedFormat(videoId);
   if (cached) return cached;
 
   const yt = await getYT();
 
-  // Try TV_EMBEDDED first (bypasses age/streaming restrictions), then ANDROID, then full getInfo
-  const clients: Array<"TV_EMBEDDED" | "ANDROID" | "WEB"> = ["TV_EMBEDDED", "ANDROID", "WEB"];
+  // IOS client is most reliable for bypassing "Sign in to confirm" errors.
+  // TV_EMBEDDED also bypasses age/streaming restrictions without cookies.
+  // The API takes { client } options object, not a bare string.
+  const clients: Array<"IOS" | "TV_EMBEDDED" | "ANDROID" | "MWEB" | "WEB"> = [
+    "IOS", "TV_EMBEDDED", "ANDROID", "MWEB", "WEB"
+  ];
   let lastErr: unknown;
 
   for (const client of clients) {
     try {
-      const info = await yt.getBasicInfo(videoId, client);
+      const info = await yt.getBasicInfo(videoId, { client });
       const format = info.chooseFormat({ type: "audio", quality: "best", format: "any" });
       if (format?.url) {
         setCachedFormat(videoId, format.url);
@@ -195,9 +201,10 @@ router.get("/music/youtube/resolve", async (req, res) => {
     if (!first) { res.status(404).json({ error: "No results" }); return; }
 
     const track = videoToTrack(first as Parameters<typeof videoToTrack>[0]);
+    const firstId = (first as { id?: string }).id ?? "";
     const result = {
-      videoId: first.id ?? "",
-      streamUrl: `/api/music/youtube/stream?videoId=${first.id}`,
+      videoId: firstId,
+      streamUrl: `/api/music/youtube/stream?videoId=${firstId}`,
       title: track.title,
       duration: track.duration,
       thumbnail: track.thumbnail,
@@ -223,6 +230,62 @@ router.get("/music/youtube/stream", async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "Stream failed");
     if (!res.headersSent) res.status(500).json({ error: "Stream unavailable" });
+  }
+});
+
+// Related tracks endpoint — returns tracks related to a given videoId.
+// Uses Innertube's watch/next page to get YouTube's own recommendations,
+// which are far more accurate than a plain text search.
+router.get("/music/youtube/related", async (req, res) => {
+  const videoId = typeof req.query["videoId"] === "string" ? req.query["videoId"] : "";
+  const limit   = Math.min(Number(req.query["limit"]) || 10, 25);
+  if (!videoId || !/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
+    res.status(400).json({ error: "Invalid videoId" }); return;
+  }
+
+  const cacheKey = `related:${videoId}:${limit}`;
+  const cached = getCachedSearch(cacheKey);
+  if (cached) { res.json(cached); return; }
+
+  try {
+    const yt = await getYT();
+    const info = await yt.getInfo(videoId);
+
+    // `watch_next_feed` is the sidebar "Up next" list — exactly what we want.
+    const related = (info.watch_next_feed ?? []) as Array<{
+      id?: string;
+      title?: { text?: string } | string;
+      author?: { name?: string } | string;
+      thumbnails?: Array<{ url?: string }>;
+      duration?: { seconds?: number };
+    }>;
+
+    const tracks = related
+      .filter((v) => v.id && v.id !== videoId) // exclude current track
+      .slice(0, limit)
+      .map((v) => videoToTrack(v));
+
+    setCachedSearch(cacheKey, tracks);
+    res.json(tracks);
+  } catch (err) {
+    // Fallback: do a text search based on the video title
+    try {
+      const yt = await getYT();
+      const info = await yt.getBasicInfo(videoId, { client: "IOS" });
+      const title  = typeof info.basic_info?.title === "string" ? info.basic_info.title : "";
+      const author = typeof info.basic_info?.author === "string" ? info.basic_info.author : "";
+      const q      = `${title} ${author}`.trim() || "music";
+      const results = await yt.search(q, { type: "video" });
+      const tracks = (results.videos ?? [])
+        .filter((v) => (v as { id?: string }).id !== videoId)
+        .slice(0, limit)
+        .map((v) => videoToTrack(v as Parameters<typeof videoToTrack>[0]));
+      setCachedSearch(cacheKey, tracks);
+      res.json(tracks);
+    } catch (fallbackErr) {
+      req.log.error({ err, fallbackErr }, "Related tracks failed");
+      res.status(500).json({ error: "Related tracks unavailable" });
+    }
   }
 });
 

@@ -106,6 +106,8 @@ bot = commands.Bot(command_prefix=PREFIX, intents=intents, help_command=None)
 
 _queue: dict[int, list[dict]] = {}
 _vc: dict[int, discord.VoiceClient] = {}
+_autoplay: dict[int, bool] = {}        # per-guild autoplay toggle (default: on)
+_last_video_id: dict[int, str] = {}    # tracks last-played videoId for autoplay
 
 YDL_OPTS = {
     "format": "bestaudio/best",
@@ -138,6 +140,22 @@ async def madara_search(query: str) -> dict | None:
     except Exception:
         pass
     return None
+
+
+async def madara_related(video_id: str) -> list[dict]:
+    """Fetch related/recommended tracks for a videoId via Madara Music API."""
+    try:
+        async with aiohttp.ClientSession() as s:
+            async with s.get(
+                f"{MADARA_API_URL}/music/youtube/related",
+                params={"videoId": video_id, "limit": 5},
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as r:
+                if r.status == 200:
+                    return await r.json()
+    except Exception:
+        pass
+    return []
 
 
 def yt_extract(query: str) -> dict | None:
@@ -175,6 +193,27 @@ async def _play_next(ctx, gid):
     q = _queue.get(gid, [])
     if q:
         await _stream(ctx, gid, q.pop(0))
+        return
+    # ── Autoplay: fetch related tracks when queue is empty ────────────────
+    if _autoplay.get(gid, True):
+        vid = _last_video_id.get(gid)
+        if vid:
+            related = await madara_related(vid)
+            if related:
+                track = related[0]
+                video_id = track.get("videoId", "")
+                base = MADARA_API_URL.replace("/api", "")
+                stream_url = f"{base}/api/music/youtube/stream?videoId={video_id}"
+                song = {
+                    "url": stream_url,
+                    "title": f"{track.get('title', 'Unknown')} — {track.get('artist', '')}".strip(" —"),
+                    "thumbnail": track.get("thumbnail", ""),
+                    "duration": track.get("duration", 0),
+                    "source": "Madara Music (autoplay)",
+                    "requester": ctx.me if hasattr(ctx, "me") else ctx.guild.me,
+                    "videoId": video_id,
+                }
+                await _stream(ctx, gid, song)
 
 
 async def _stream(ctx, gid, song):
@@ -196,10 +235,16 @@ async def _stream(ctx, gid, song):
     if song.get("duration"):
         embed.add_field(name="Duration", value=fmt(song["duration"]))
     embed.add_field(name="Source", value=song.get("source", "Madara Music"))
-    embed.add_field(name="Requested by", value=song["requester"].mention)
+    if hasattr(song["requester"], "mention"):
+        embed.add_field(name="Requested by", value=song["requester"].mention)
+    autoplay_on = _autoplay.get(ctx.guild.id, True)
+    embed.add_field(name="Autoplay", value="🔄 On" if autoplay_on else "⏹ Off", inline=True)
     # !! DO NOT REMOVE THE FOOTER LINE BELOW — REQUIRED ATTRIBUTION !!
     embed.set_footer(text=f"{_MADARA_CREDIT} • {MADARA_API_URL.replace('/api', '')}")
     await ctx.send(embed=embed)
+    # Save videoId for autoplay next-song lookup
+    if song.get("videoId"):
+        _last_video_id[ctx.guild.id] = song["videoId"]
 
 
 # ─── Events & Commands ────────────────────────────────────────────────────────
@@ -237,6 +282,7 @@ async def play(ctx, *, query: str):
                 "duration": track.get("duration", 0),
                 "source": "Madara Music",
                 "requester": ctx.author,
+                "videoId": video_id,
             }
         else:
             info = await asyncio.to_thread(yt_extract, query)
@@ -256,6 +302,16 @@ async def play(ctx, *, query: str):
         ))
     else:
         await _stream(ctx, gid, song)
+
+
+@bot.command()
+async def autoplay(ctx):
+    """Toggle autoplay on/off. When on, related tracks auto-queue when the queue is empty."""
+    gid = ctx.guild.id
+    current = _autoplay.get(gid, True)
+    _autoplay[gid] = not current
+    state = "🔄 **Autoplay ON** — related tracks will auto-queue when the queue ends." if _autoplay[gid] else "⏹ **Autoplay OFF** — bot stops when the queue is empty."
+    await ctx.send(embed=discord.Embed(description=state, color=CRIMSON).set_footer(text=_MADARA_CREDIT))
 
 
 @bot.command()
@@ -328,6 +384,7 @@ async def help(ctx):
         ("pause/resume",   "Pause or resume"),
         ("queue",          "View the queue"),
         ("volume <0-200>", "Set volume"),
+        ("autoplay",       "Toggle autoplay (related tracks when queue ends)"),
     ]:
         embed.add_field(name=f"\`{PREFIX}{name}\`", value=desc, inline=False)
     # !! DO NOT REMOVE THIS LINE — REQUIRED ATTRIBUTION !!
@@ -436,8 +493,10 @@ YDL_OPTS = {
     "outtmpl": "/tmp/madara_%(id)s.%(ext)s",
 }
 
-# Per-chat queue
+# Per-chat state
 _queues: dict[int, list[dict]] = {}
+_tg_autoplay: dict[int, bool] = {}       # per-chat autoplay toggle (default: on)
+_tg_last_video_id: dict[int, str] = {}   # videoId of last played track per chat
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -449,6 +508,23 @@ async def madara_search(query: str) -> dict | None:
             async with s.get(
                 f"{MADARA_API_URL}/music/youtube/search",
                 params={"q": query, "limit": 5},
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as r:
+                if r.status == 200:
+                    results = await r.json()
+                    return results[0] if results else None
+    except Exception:
+        pass
+    return None
+
+
+async def madara_related_tg(video_id: str) -> dict | None:
+    """Fetch one related/recommended track for autoplay via Madara Music API."""
+    try:
+        async with aiohttp.ClientSession() as s:
+            async with s.get(
+                f"{MADARA_API_URL}/music/youtube/related",
+                params={"videoId": video_id, "limit": 3},
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as r:
                 if r.status == 200:
@@ -520,8 +596,10 @@ async def cmd_play(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Usage: /play <song name or URL>")
         return
     query = " ".join(ctx.args)
+    chat_id = update.message.chat_id
     msg = await update.message.reply_text(f"🔍 Searching for *{query}*...", parse_mode="Markdown")
     keyboard = [[InlineKeyboardButton("Open in Madara Music", url=MADARA_API_URL.replace("/api", ""))]]
+    played_video_id = None
     # ── Primary: Madara Music YouTube API (full song, no 30s limit) ──
     track = await madara_search(query)
     if track and track.get("videoId"):
@@ -531,10 +609,12 @@ async def cmd_play(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await msg.edit_text(f"📥 Downloading *{title}*...", parse_mode="Markdown")
         path = await madara_download(video_id)
         if path:
+            autoplay_on = _tg_autoplay.get(chat_id, True)
             caption = (
                 f"🎵 *{title}*\\n"
                 f"👤 {artist}\\n"
-                f"🔗 Full song via Madara Music\\n\\n"
+                f"🔗 Full song via Madara Music\\n"
+                f"🔄 Autoplay: {'On' if autoplay_on else 'Off'}\\n\\n"
                 f"_{_MADARA_CREDIT}_"  # DO NOT REMOVE THIS LINE
             )
             try:
@@ -548,34 +628,73 @@ async def cmd_play(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         reply_markup=InlineKeyboardMarkup(keyboard),
                     )
                 await msg.delete()
+                played_video_id = video_id
             finally:
                 try: os.remove(path)
                 except Exception: pass
-            return
-    # ── Fallback: yt-dlp direct download ─────────────────────────────
-    await msg.edit_text("📥 Downloading from YouTube (fallback)...")
-    try:
-        path = await asyncio.to_thread(yt_download, query)
-        if not path:
-            await msg.edit_text("Could not find that track.")
-            return
-        caption = (
-            f"🎵 *{query}*\\n"
-            f"🔗 Source: YouTube\\n\\n"
-            f"_{_MADARA_CREDIT}_"  # DO NOT REMOVE THIS LINE
-        )
-        with open(path, "rb") as f:
-            await update.message.reply_audio(
-                audio=f,
-                caption=caption,
-                parse_mode="MarkdownV2",
-                reply_markup=InlineKeyboardMarkup(keyboard),
+    if not played_video_id:
+        # ── Fallback: yt-dlp direct download ─────────────────────────────
+        await msg.edit_text("📥 Downloading from YouTube (fallback)...")
+        try:
+            path = await asyncio.to_thread(yt_download, query)
+            if not path:
+                await msg.edit_text("Could not find that track.")
+                return
+            autoplay_on = _tg_autoplay.get(chat_id, True)
+            caption = (
+                f"🎵 *{query}*\\n"
+                f"🔗 Source: YouTube\\n"
+                f"🔄 Autoplay: {'On' if autoplay_on else 'Off'}\\n\\n"
+                f"_{_MADARA_CREDIT}_"  # DO NOT REMOVE THIS LINE
             )
-        await msg.delete()
-        try: os.remove(path)
-        except Exception: pass
-    except Exception as e:
-        await msg.edit_text(f"Error: {e}")
+            with open(path, "rb") as f:
+                await update.message.reply_audio(
+                    audio=f,
+                    caption=caption,
+                    parse_mode="MarkdownV2",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                )
+            await msg.delete()
+            try: os.remove(path)
+            except Exception: pass
+        except Exception as e:
+            await msg.edit_text(f"Error: {e}")
+            return
+    # ── Autoplay: queue up next related track ────────────────────────
+    if played_video_id and _tg_autoplay.get(chat_id, True):
+        _tg_last_video_id[chat_id] = played_video_id
+        next_track = await madara_related_tg(played_video_id)
+        if next_track and next_track.get("videoId"):
+            next_vid  = next_track["videoId"]
+            next_title = next_track.get("title", "?")
+            next_artist = next_track.get("artist", "")
+            await update.message.reply_text(
+                f"🔄 *Autoplay: Up next*\\n🎵 *{next_title}* — {next_artist}\\n\\nSend /skip to skip, /autoplay to turn off.",
+                parse_mode="Markdown",
+            )
+            # Download and send next track after a short delay
+            await asyncio.sleep(1)
+            path2 = await madara_download(next_vid)
+            if path2:
+                caption2 = (
+                    f"🎵 *{next_title}*\\n"
+                    f"👤 {next_artist}\\n"
+                    f"🔄 Autoplay — {_MADARA_CREDIT}"  # DO NOT REMOVE
+                )
+                try:
+                    with open(path2, "rb") as f:
+                        await update.message.reply_audio(
+                            audio=f,
+                            title=next_title,
+                            performer=next_artist,
+                            caption=caption2,
+                            parse_mode="MarkdownV2",
+                            reply_markup=InlineKeyboardMarkup(keyboard),
+                        )
+                    _tg_last_video_id[chat_id] = next_vid
+                finally:
+                    try: os.remove(path2)
+                    except Exception: pass
 
 
 async def cmd_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -604,12 +723,30 @@ async def cmd_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, parse_mode="MarkdownV2")
 
 
+async def cmd_autoplay(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Toggle autoplay on/off for this chat."""
+    chat_id = update.message.chat_id
+    current = _tg_autoplay.get(chat_id, True)
+    _tg_autoplay[chat_id] = not current
+    if _tg_autoplay[chat_id]:
+        await update.message.reply_text(
+            "🔄 *Autoplay ON* — after each song I'll automatically send a related track\\.",
+            parse_mode="MarkdownV2",
+        )
+    else:
+        await update.message.reply_text(
+            "⏹ *Autoplay OFF* — I'll stop after each song\\.",
+            parse_mode="MarkdownV2",
+        )
+
+
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("Open Madara Music", url=MADARA_API_URL.replace("/api", ""))]]
     await update.message.reply_text(
         f"🎵 *Madara Music Bot Commands*\\n\\n"
         f"/play \\<song\\> — Play via Madara Music or YouTube\\n"
         f"/search \\<song\\> — Search and list top 5\\n"
+        f"/autoplay — Toggle autoplay \\(on by default\\)\\n"
         f"/start — Welcome message\\n"
         f"/help — This message\\n\\n"
         f"_{_MADARA_CREDIT} — Free music, no paid APIs_",  # DO NOT REMOVE
@@ -628,10 +765,11 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
-    app.add_handler(CommandHandler("start",  cmd_start))
-    app.add_handler(CommandHandler("play",   cmd_play))
-    app.add_handler(CommandHandler("search", cmd_search))
-    app.add_handler(CommandHandler("help",   cmd_help))
+    app.add_handler(CommandHandler("start",    cmd_start))
+    app.add_handler(CommandHandler("play",     cmd_play))
+    app.add_handler(CommandHandler("search",   cmd_search))
+    app.add_handler(CommandHandler("autoplay", cmd_autoplay))
+    app.add_handler(CommandHandler("help",     cmd_help))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     print(f"[Madara] Telegram bot starting...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
@@ -1072,6 +1210,28 @@ class YouTubeAPI:
                     continue
         return formats_available, link
 
+    async def related(self, link: str, videoid: Union[bool, str] = None, limit: int = 5) -> list:
+        """Return a list of related track dicts for autoplay via Madara Music API."""
+        if videoid:
+            link = self.base + link
+        vid = link.split("v=")[-1].split("&")[0] if "v=" in link else link
+        if not vid or len(vid) < 5:
+            return []
+        url = f"{MADARA_API_URL}/api/music/youtube/related"
+        try:
+            async with aiohttp.ClientSession() as s:
+                async with s.get(
+                    url,
+                    params={"videoId": vid, "limit": limit},
+                    timeout=aiohttp.ClientTimeout(total=15),
+                ) as r:
+                    if r.status != 200:
+                        return []
+                    data = await r.json()
+                    return data if isinstance(data, list) else []
+        except Exception:
+            return []
+
     async def download(
         self,
         link: str,
@@ -1308,7 +1468,7 @@ export default function BotPage() {
             <Terminal className="w-4 h-4 text-sky-400" /> Commands
           </h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {[["/play <song>","Play & send audio"],["/search <song>","Show top 5 results"],["/start","Welcome message"],["/help","All commands"],["(any text)","Auto-play search"]].map(([cmd, desc]) => (
+            {[["/play <song>","Play & send audio"],["/search <song>","Show top 5 results"],["/autoplay","Toggle autoplay on/off"],["/start","Welcome message"],["/help","All commands"],["(any text)","Auto-play search"]].map(([cmd, desc]) => (
               <div key={cmd} className="bg-white/5 rounded-xl p-3">
                 <code className="text-sky-400 text-sm font-mono">{cmd}</code>
                 <p className="text-white/50 text-xs mt-1">{desc}</p>

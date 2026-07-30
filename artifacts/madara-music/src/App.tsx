@@ -18,6 +18,7 @@ import SharedPlaylist from "./pages/shared-playlist";
 import Profile from "./pages/profile";
 import Settings from "./pages/settings";
 import BotPage from "./pages/bot";
+import ApiKeysPage from "./pages/api-keys";
 import NotFound from "./pages/not-found";
 
 const queryClient = new QueryClient();
@@ -170,6 +171,7 @@ function AppRouter() {
           <Route path="/profile" component={Profile} />
           <Route path="/settings" component={Settings} />
           <Route path="/bot" component={BotPage} />
+          <Route path="/api-keys" component={ApiKeysPage} />
           <Route component={NotFound} />
         </Switch>
       </Layout>

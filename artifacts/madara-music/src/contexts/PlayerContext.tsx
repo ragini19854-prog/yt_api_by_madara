@@ -78,13 +78,30 @@ function extractVideoId(track: Track): string | null {
   }
 }
 
-async function fetchRelatedTracks(track: Track): Promise<Track[]> {
+// Fetch tracks related to the given seed track.
+// Prefers the /related endpoint (YouTube's own recommendations for this videoId),
+// which avoids re-fetching the same song. Falls back to a text search if the
+// seed has no videoId or the related endpoint fails.
+async function fetchRelatedTracks(track: Track, excludeIds: Set<string>): Promise<Track[]> {
   try {
+    const videoId = track.videoId
+      ?? (() => { try { return new URL(track.previewUrl, window.location.origin).searchParams.get("videoId"); } catch { return null; } })();
+
+    if (videoId) {
+      const res = await fetch(`/api/music/youtube/related?videoId=${encodeURIComponent(videoId)}&limit=10`);
+      if (res.ok) {
+        const data = (await res.json()) as Track[];
+        const fresh = data.filter((t) => !excludeIds.has(t.id));
+        if (fresh.length > 0) return fresh.slice(0, 5);
+      }
+    }
+
+    // Fallback: text search but exclude already-played tracks
     const q = encodeURIComponent(`${track.title} ${track.artist}`);
-    const res = await fetch(`/api/music/youtube/search?q=${q}&limit=5`);
+    const res = await fetch(`/api/music/youtube/search?q=${q}&limit=10`);
     if (!res.ok) return [];
     const data = (await res.json()) as Track[];
-    return data.filter((t) => t.id !== track.id).slice(0, 5);
+    return data.filter((t) => !excludeIds.has(t.id)).slice(0, 5);
   } catch {
     return [];
   }
@@ -351,7 +368,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             const seed = q[idx];
             if (autoplay && seed && !autoplayingRef.current) {
               autoplayingRef.current = true;
-              fetchRelatedTracks(seed).then((related) => {
+              // Pass the full set of already-queued track IDs so related
+              // tracks are genuinely fresh (not songs already played/queued).
+              const alreadyPlayed = new Set(q.map((t) => t.id));
+              fetchRelatedTracks(seed, alreadyPlayed).then((related) => {
                 autoplayingRef.current = false;
                 if (related.length > 0) {
                   setQueue((prev) => {

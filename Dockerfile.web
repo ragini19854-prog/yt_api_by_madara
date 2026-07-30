@@ -1,0 +1,28 @@
+FROM node:20-alpine AS builder
+WORKDIR /app
+
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY artifacts/madara-music/package.json ./artifacts/madara-music/
+COPY lib/api-client-react/package.json ./lib/api-client-react/
+COPY lib/api-spec/package.json ./lib/api-spec/
+RUN mkdir -p lib/db && echo '{"name":"@workspace/db","version":"0.0.0"}' > lib/db/package.json
+RUN mkdir -p lib/api-zod && echo '{"name":"@workspace/api-zod","version":"0.0.0"}' > lib/api-zod/package.json
+
+RUN pnpm install --frozen-lockfile
+
+COPY . .
+
+ARG VITE_CLERK_PUBLISHABLE_KEY
+ARG VITE_API_BASE_URL=/api
+
+ENV BASE_PATH=/ PORT=3000 VITE_CLERK_PUBLISHABLE_KEY=$VITE_CLERK_PUBLISHABLE_KEY VITE_API_BASE_URL=$VITE_API_BASE_URL
+
+RUN pnpm --filter @workspace/madara-music run build
+
+# ── Runtime: nginx ────────────────────────────────────────────────────────────
+FROM nginx:alpine
+COPY --from=builder /app/artifacts/madara-music/dist/public /usr/share/nginx/html
+COPY nginx-web.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80

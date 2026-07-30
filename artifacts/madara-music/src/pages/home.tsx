@@ -8,8 +8,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useLocation } from "wouter";
 
 export default function Home() {
-  const { data: trendingTracks, isLoading: loadingTrending } = useGetTrending({ limit: 12 });
-  const { data: genres, isLoading: loadingGenres } = useGetGenres();
+  const { data: rawTrendingTracks, isLoading: loadingTrending } = useGetTrending({ limit: 12 });
+  const trendingTracks = Array.isArray(rawTrendingTracks) ? rawTrendingTracks : undefined;
+  const { data: rawGenres, isLoading: loadingGenres } = useGetGenres();
+  const genres = Array.isArray(rawGenres) ? rawGenres : undefined;
   const { playAll } = usePlayer();
   const [, navigate] = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
