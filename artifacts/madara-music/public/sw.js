@@ -1,6 +1,5 @@
-const CACHE_NAME = "madara-music-v2";
+const CACHE_NAME = "madara-music-v3";
 const APP_SHELL = [
-  "/",
   "/manifest.json",
   "/favicon.svg",
 ];
@@ -33,6 +32,29 @@ self.addEventListener("fetch", (event) => {
     url.pathname.startsWith("/api/")
   ) {
     return; // let browser fetch normally
+  }
+
+  // Always prefer the latest HTML so a deploy cannot leave the app pointing
+  // at an old hashed JavaScript bundle. Fall back to the cached shell only
+  // when the browser is offline.
+  if (event.request.mode === "navigate") {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response.ok) {
+            caches.open(CACHE_NAME).then((cache) =>
+              cache.put(event.request, response.clone()),
+            );
+          }
+          return response;
+        })
+        .catch(() =>
+          caches.match(event.request).then(
+            (cached) => cached || caches.match("/"),
+          ),
+        ),
+    );
+    return;
   }
 
   event.respondWith(
