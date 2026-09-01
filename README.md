@@ -185,14 +185,18 @@ for a single-service Railway deployment. The container builds the React app,
 serves its static files through Express, and exposes the API under `/api`.
 
 1. Create a new Railway project from this GitHub repository.
-2. Keep the repository root as the service root and let Railway use the
-   included `Dockerfile`.
-3. Optionally add the Clerk variables from `.env.example` in Railway's
+2. Keep the service root at `/` (the repository root) and let Railway use the
+   included `Dockerfile`. Do not set the root to `lib/db` or an artifact
+   subdirectory.
+3. The included `railway.json` explicitly starts
+   `node --enable-source-maps /app/api/index.mjs`; clear any old custom start
+   command in an existing Railway service.
+4. Optionally add the Clerk variables from `.env.example` in Railway's
    Variables tab to enable Google sign-in. Without them, the app runs in guest
    mode with localStorage.
-4. If enabling Clerk, set `VITE_CLERK_PUBLISHABLE_KEY` before the first deploy
+5. If enabling Clerk, set `VITE_CLERK_PUBLISHABLE_KEY` before the first deploy
    because Vite embeds it during the image build.
-5. Deploy and verify `https://your-domain/api/healthz` returns
+6. Deploy and verify `https://your-domain/api/healthz` returns
    `{"status":"ok"}`.
 
 Library data uses browser localStorage and does not require PostgreSQL.
