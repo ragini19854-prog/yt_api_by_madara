@@ -3,6 +3,7 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import { clerkMiddleware } from "@clerk/express";
 import { publishableKeyFromHost } from "@clerk/shared/keys";
+import path from "node:path";
 import {
   CLERK_PROXY_PATH,
   clerkProxyMiddleware,
@@ -39,10 +40,7 @@ app.use(cors({ credentials: true, origin: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Only mount Clerk middleware when the secret key is configured.
-// Without it every request throws "Missing Clerk Secret Key", which breaks
-// public endpoints (YouTube stream, trending, etc.) even in dev.
-if (process.env.CLERK_SECRET_KEY) {
+if (process.env.CLERK_PUBLISHABLE_KEY) {
   app.use(
     clerkMiddleware((req) => ({
       publishableKey: publishableKeyFromHost(
@@ -51,8 +49,30 @@ if (process.env.CLERK_SECRET_KEY) {
       ),
     })),
   );
+} else {
+  logger.warn(
+    "CLERK_PUBLISHABLE_KEY is not configured; running API in guest mode",
+  );
 }
 
 app.use("/api", router);
+
+// Railway runs the API and the compiled Vite app in one service. Replit keeps
+// its frontend as a separate static artifact, so this is opt-in.
+const frontendDistDir = process.env.FRONTEND_DIST_DIR;
+if (frontendDistDir) {
+  const frontendRoot = path.resolve(frontendDistDir);
+  app.use(express.static(frontendRoot, { index: "index.html" }));
+  app.use((req, res, next) => {
+    if (req.method !== "GET" || req.path === "/api" || req.path.startsWith("/api/")) {
+      next();
+      return;
+    }
+
+    res.sendFile(path.join(frontendRoot, "index.html"), (error) => {
+      if (error) next(error);
+    });
+  });
+}
 
 export default app;

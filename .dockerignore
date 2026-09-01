@@ -1,0 +1,16 @@
+.git
+.github
+.cache
+.local
+.replit
+.replit-artifact
+node_modules
+dist
+tmp
+out-tsc
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+attached_assets
+coverage

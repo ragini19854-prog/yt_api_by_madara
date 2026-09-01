@@ -9,7 +9,7 @@
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript)](https://typescriptlang.org)
 [![Express](https://img.shields.io/badge/Express-4-000000?style=flat-square&logo=express)](https://expressjs.com)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Drizzle-336791?style=flat-square&logo=postgresql)](https://orm.drizzle.team)
+[![Free Plan](https://img.shields.io/badge/Free%20Plan-localStorage-7C3AED?style=flat-square)](https://developer.mozilla.org/en-US/docs/Web/API/Window/localStorage)
 [![Clerk](https://img.shields.io/badge/Auth-Clerk-6C47FF?style=flat-square&logo=clerk)](https://clerk.com)
 [![Vite](https://img.shields.io/badge/Vite-7-646CFF?style=flat-square&logo=vite)](https://vitejs.dev)
 
@@ -42,15 +42,15 @@
 - Featured track hero with instant "Listen Now"
 
 ### 📚 Library
-- **Playlists** — create, edit, delete, add/remove tracks, set cover image and description
-- **Favorites** — heart any track, access from your library
-- **Play History** — full listening history with timestamps
-- **Public Playlists** — shareable via unique token link
+- **Playlists** — create, add tracks, and delete playlists
+- **Favorites** — heart any track and access it from your library
+- **Play History** — recent listening history and local stats
+- **Public Playlists** — shareable links encode the playlist for static hosting
 
 ### 👤 Auth & Profile
 - **Google login** via Clerk — one click sign-in
 - User profile page with avatar, stats, and recent plays
-- Protected routes — guests can browse, members can save
+- Guest-first library — library data works without signing in and stays in the browser
 
 ### ⬇️ Downloads
 - Download any track as an audio file via the server proxy
@@ -82,19 +82,13 @@
 │  Express API Server (artifacts/api-server)       │
 │                                                  │
 │  /api/music/youtube/search  ← youtubei.js        │
-│  /api/playlists             ← Drizzle ORM        │
-│  /api/favorites             ← Drizzle ORM        │
-│  /api/history               ← Drizzle ORM        │
+│  /api/playlists             ← memory fallback    │
+│  /api/favorites             ← memory fallback    │
+│  /api/history               ← memory fallback    │
 │  /api/music/youtube/stream  ← audio proxy        │
 │                                                  │
 │  Auth middleware: Clerk Express SDK              │
-└──────────────────┬──────────────────────────────┘
-                   │
-                   ▼
-          ┌────────────────┐
-          │  PostgreSQL DB  │
-          │  (Drizzle ORM) │
-          └────────────────┘
+└─────────────────────────────────────────────────┘
 ```
 
 ### Key Design Decisions
@@ -105,7 +99,8 @@
 | **`play()` loads video synchronously** | Browser autoplay policy requires the video load to happen inside the user-gesture call stack, not a React `useEffect` |
 | **`youtubei.js` (Innertube)** | No YouTube Data API key needed — uses the same internal API YouTube's own clients use |
 | **OpenAPI + Orval codegen** | Type-safe hooks auto-generated from the spec (`lib/api-client-react`) — no manual fetch wrappers |
-| **pnpm monorepo** | `lib/db`, `lib/api-spec`, `lib/api-zod`, `lib/api-client-react` shared between frontend and backend |
+| **Browser library storage** | Favorites, playlists, history, and stats persist in `localStorage`, so static hosting does not require PostgreSQL |
+| **pnpm monorepo** | `lib/api-spec`, `lib/api-zod`, and `lib/api-client-react` are shared between frontend and backend |
 
 ---
 
@@ -127,7 +122,6 @@ yt_api_by_madara/
 │           └── middlewares/   # Clerk auth, audio proxy
 │
 ├── lib/
-│   ├── db/                    # Drizzle ORM schema + PostgreSQL connection
 │   ├── api-spec/              # OpenAPI 3.1 specification
 │   ├── api-zod/               # Shared Zod validation schemas
 │   └── api-client-react/      # Orval-generated TanStack Query hooks
@@ -143,7 +137,7 @@ yt_api_by_madara/
 ### Prerequisites
 - Node.js 18+
 - pnpm 8+
-- PostgreSQL database
+- A Clerk publishable key for the sign-in UI (guest browsing and the local library work without an account)
 
 ### 1. Clone the repo
 ```bash
@@ -161,24 +155,19 @@ pnpm install
 Create a `.env` file (or set these in your environment):
 
 ```env
-# Database
-DATABASE_URL=postgresql://user:password@localhost:5432/madara_music
-
 # Clerk Auth
 CLERK_PUBLISHABLE_KEY=pk_test_...
-CLERK_SECRET_KEY=sk_test_...
+CLERK_SECRET_KEY=replace_with_clerk_secret_key
 VITE_CLERK_PUBLISHABLE_KEY=pk_test_...
 
 # Session
 SESSION_SECRET=your_super_secret_here
 ```
 
-### 4. Run database migrations
-```bash
-pnpm --filter @workspace/db db:push
-```
+Never commit `.env` or real credentials. Use `.env.example` as the variable
+checklist and configure secrets in your hosting provider.
 
-### 5. Start the dev servers
+### 4. Start the dev servers
 ```bash
 # API server
 pnpm --filter @workspace/api-server run dev
@@ -188,6 +177,25 @@ pnpm --filter @workspace/madara-music run dev
 ```
 
 Open `http://localhost:5173` 🎉
+
+### Railway deployment
+
+This repository includes a root `Dockerfile`, `railway.json`, and health check
+for a single-service Railway deployment. The container builds the React app,
+serves its static files through Express, and exposes the API under `/api`.
+
+1. Create a new Railway project from this GitHub repository.
+2. Keep the repository root as the service root and let Railway use the
+   included `Dockerfile`.
+3. Add the variables from `.env.example` in Railway's Variables tab.
+4. Set `VITE_CLERK_PUBLISHABLE_KEY` before the first deploy because Vite embeds
+   it during the image build.
+5. Deploy and verify `https://your-domain/api/healthz` returns
+   `{"status":"ok"}`.
+
+The app can run in guest mode without Clerk server variables, but sign-in
+requires valid Clerk keys. Library data uses browser localStorage and does not
+require PostgreSQL.
 
 ---
 
@@ -200,7 +208,7 @@ Open `http://localhost:5173` 🎉
 | **Routing** | Wouter |
 | **Data Fetching** | TanStack Query (React Query) |
 | **Backend** | Node.js, Express 4, TypeScript |
-| **Database** | PostgreSQL + Drizzle ORM |
+| **Library storage** | Browser `localStorage` (no database required) |
 | **Auth** | Clerk (Google OAuth) |
 | **YouTube** | `youtubei.js` (Innertube API, no API key) |
 | **API Codegen** | Orval (OpenAPI → TanStack Query hooks) |
@@ -218,9 +226,9 @@ Open `http://localhost:5173` 🎉
 | `GET` | `/api/music/genres` | Genre list |
 | `GET` | `/api/music/youtube/stream` | Proxy audio stream |
 | `GET/POST` | `/api/playlists` | List / create playlists |
-| `GET/PUT/DELETE` | `/api/playlists/:id` | Get / update / delete playlist |
+| `GET/PATCH/DELETE` | `/api/playlists/:id` | Get / update / delete playlist |
 | `POST/DELETE` | `/api/playlists/:id/tracks` | Add / remove track from playlist |
-| `GET` | `/api/playlists/shared/:token` | Get shared playlist by token |
+| `GET` | `/api/playlists/share/:token` | Get server-shared playlist by token |
 | `GET/POST/DELETE` | `/api/favorites` | List / add / remove favorites |
 | `GET/POST` | `/api/history` | Get / record play history |
 
@@ -246,7 +254,7 @@ MIT © [Madara](https://github.com/ragini19854-prog)
 
 <div align="center">
 
-Built with ❤️ on Github · Powered by YouTube Innertube API
+Built with ❤️ on [Replit](https://replit.com) · Powered by YouTube Innertube API
 
 ⭐ Star this repo if you found it useful!
 
