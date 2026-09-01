@@ -187,15 +187,15 @@ serves its static files through Express, and exposes the API under `/api`.
 1. Create a new Railway project from this GitHub repository.
 2. Keep the repository root as the service root and let Railway use the
    included `Dockerfile`.
-3. Add the variables from `.env.example` in Railway's Variables tab.
-4. Set `VITE_CLERK_PUBLISHABLE_KEY` before the first deploy because Vite embeds
-   it during the image build.
+3. Optionally add the Clerk variables from `.env.example` in Railway's
+   Variables tab to enable Google sign-in. Without them, the app runs in guest
+   mode with localStorage.
+4. If enabling Clerk, set `VITE_CLERK_PUBLISHABLE_KEY` before the first deploy
+   because Vite embeds it during the image build.
 5. Deploy and verify `https://your-domain/api/healthz` returns
    `{"status":"ok"}`.
 
-The app can run in guest mode without Clerk server variables, but sign-in
-requires valid Clerk keys. Library data uses browser localStorage and does not
-require PostgreSQL.
+Library data uses browser localStorage and does not require PostgreSQL.
 
 ---
 

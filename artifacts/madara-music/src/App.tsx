@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react";
 import { ClerkProvider, SignIn, SignUp, useClerk } from "@clerk/react";
-import { publishableKeyFromHost } from "@clerk/react/internal";
 import { shadcn } from "@clerk/themes";
 import { PlayerProvider } from "./contexts/PlayerContext";
 import { Sidebar } from "./components/layout/Sidebar";
@@ -18,27 +17,17 @@ import SharedPlaylist from "./pages/shared-playlist";
 import Profile from "./pages/profile";
 import Settings from "./pages/settings";
 import BotPage from "./pages/bot";
-import ApiKeysPage from "./pages/api-keys";
 import NotFound from "./pages/not-found";
+import { clerkEnabled, clerkProxyUrl, clerkPubKey } from "./lib/clerk";
 
 const queryClient = new QueryClient();
 
-const clerkPubKey = publishableKeyFromHost(
-  window.location.hostname,
-  import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
-);
-
-const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 function stripBase(path: string): string {
   return basePath && path.startsWith(basePath)
     ? path.slice(basePath.length) || "/"
     : path;
-}
-
-if (!clerkPubKey) {
-  throw new Error("Missing VITE_CLERK_PUBLISHABLE_KEY");
 }
 
 const clerkAppearance = {
@@ -171,7 +160,6 @@ function AppRouter() {
           <Route path="/profile" component={Profile} />
           <Route path="/settings" component={Settings} />
           <Route path="/bot" component={BotPage} />
-          <Route path="/api-keys" component={ApiKeysPage} />
           <Route component={NotFound} />
         </Switch>
       </Layout>
@@ -181,6 +169,30 @@ function AppRouter() {
 
 function ClerkProviderWithRoutes() {
   const [, setLocation] = useLocation();
+
+  const content = (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        {clerkEnabled && <ClerkQueryClientCacheInvalidator />}
+        <Switch>
+          {clerkEnabled && (
+            <>
+              <Route path="/sign-in/*?" component={SignInPage} />
+              <Route path="/sign-up/*?" component={SignUpPage} />
+            </>
+          )}
+          <Route>
+            <AppRouter />
+          </Route>
+        </Switch>
+        <Toaster />
+      </TooltipProvider>
+    </QueryClientProvider>
+  );
+
+  if (!clerkEnabled || !clerkPubKey) {
+    return content;
+  }
 
   return (
     <ClerkProvider
@@ -206,19 +218,7 @@ function ClerkProviderWithRoutes() {
       routerPush={(to: string) => setLocation(stripBase(to))}
       routerReplace={(to: string) => setLocation(stripBase(to), { replace: true })}
     >
-      <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <ClerkQueryClientCacheInvalidator />
-          <Switch>
-            <Route path="/sign-in/*?" component={SignInPage} />
-            <Route path="/sign-up/*?" component={SignUpPage} />
-            <Route>
-              <AppRouter />
-            </Route>
-          </Switch>
-          <Toaster />
-        </TooltipProvider>
-      </QueryClientProvider>
+      {content}
     </ClerkProvider>
   );
 }

@@ -1,18 +1,17 @@
 import { Link, useLocation } from "wouter";
-import { Home, Search, Library, User, Settings, Download, Music, Bot, Key } from "lucide-react";
+import { Home, Search, Library, User, Settings, Download, Music, Bot } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth, SignInButton, UserButton } from "@clerk/react";
+import { clerkEnabled } from "@/lib/clerk";
 
 export function Sidebar() {
   const [location] = useLocation();
-  const { isSignedIn } = useAuth();
 
   const links = [
     { href: "/", label: "Home", icon: Home },
     { href: "/search", label: "Search", icon: Search },
     { href: "/library", label: "Library", icon: Library },
     { href: "/bot", label: "Discord Bot", icon: Bot },
-    { href: "/api-keys", label: "API Keys", icon: Key },
   ];
 
   const bottomLinks = [
@@ -77,19 +76,33 @@ export function Sidebar() {
       </div>
 
       <div className="mt-6 px-3">
-        {isSignedIn ? (
-          <div className="flex items-center gap-3">
-            <UserButton appearance={{ elements: { avatarBox: "w-8 h-8" } }} />
-            <span className="text-sm font-medium">Account</span>
-          </div>
-        ) : (
-          <SignInButton mode="modal">
-            <button className="w-full bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium py-2 rounded-md transition-colors">
-              Sign In
-            </button>
-          </SignInButton>
-        )}
+        {clerkEnabled ? <ClerkAccountControls /> : <GuestAccountControls />}
       </div>
+    </div>
+  );
+}
+
+function ClerkAccountControls() {
+  const { isSignedIn } = useAuth();
+
+  return isSignedIn ? (
+    <div className="flex items-center gap-3">
+      <UserButton appearance={{ elements: { avatarBox: "w-8 h-8" } }} />
+      <span className="text-sm font-medium">Account</span>
+    </div>
+  ) : (
+    <SignInButton mode="modal">
+      <button className="w-full bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium py-2 rounded-md transition-colors">
+        Sign In
+      </button>
+    </SignInButton>
+  );
+}
+
+function GuestAccountControls() {
+  return (
+    <div className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-center text-xs text-muted-foreground">
+      Guest mode · local library
     </div>
   );
 }
