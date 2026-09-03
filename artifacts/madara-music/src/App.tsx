@@ -19,6 +19,7 @@ import Settings from "./pages/settings";
 import BotPage from "./pages/bot";
 import NotFound from "./pages/not-found";
 import { clerkEnabled, clerkProxyUrl, clerkPubKey } from "./lib/clerk";
+import { ClerkAuthBridge } from "./contexts/AuthContext";
 
 const queryClient = new QueryClient();
 
@@ -218,7 +219,7 @@ function ClerkProviderWithRoutes() {
       routerPush={(to: string) => setLocation(stripBase(to))}
       routerReplace={(to: string) => setLocation(stripBase(to), { replace: true })}
     >
-      {content}
+      <ClerkAuthBridge>{content}</ClerkAuthBridge>
     </ClerkProvider>
   );
 }

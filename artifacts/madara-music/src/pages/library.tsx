@@ -1,13 +1,15 @@
-import { useAuth, SignInButton } from "@clerk/react";
+import { SignInButton } from "@clerk/react";
 import { useGetPlaylists, useGetFavorites, getGetPlaylistsQueryKey } from "@workspace/api-client-react";
 import { PlaylistCard } from "../components/PlaylistCard";
 import { TrackCard } from "../components/TrackCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Play } from "lucide-react";
 import { usePlayer } from "../contexts/PlayerContext";
+import { useOptionalAuth } from "../contexts/AuthContext";
+import { clerkEnabled } from "@/lib/clerk";
 
 export default function Library() {
-  const { isSignedIn, userId } = useAuth();
+  const { isSignedIn, userId } = useOptionalAuth();
   const { playAll } = usePlayer();
 
   const { data: playlists, isLoading: loadingPlaylists } = useGetPlaylists(
@@ -28,11 +30,15 @@ export default function Library() {
         </div>
         <h1 className="text-3xl font-bold text-white mb-4">Your Library Awaits</h1>
         <p className="text-white/60 mb-8 leading-relaxed">Sign in to save your favorite tracks, create custom playlists, and sync your music across all devices.</p>
-        <SignInButton mode="modal">
-          <button className="bg-primary hover:bg-primary/90 text-white font-bold py-3 px-8 rounded-full transition-transform hover:scale-105 shadow-[0_0_20px_rgba(230,57,70,0.4)]">
-            Sign In to Access
-          </button>
-        </SignInButton>
+        {clerkEnabled ? (
+          <SignInButton mode="modal">
+            <button className="bg-primary hover:bg-primary/90 text-white font-bold py-3 px-8 rounded-full transition-transform hover:scale-105 shadow-[0_0_20px_rgba(230,57,70,0.4)]">
+              Sign In to Access
+            </button>
+          </SignInButton>
+        ) : (
+          <p className="text-white/40 text-sm">Sign-in isn't configured for this deployment yet.</p>
+        )}
       </div>
     );
   }

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useAuth } from "@clerk/react";
+import { useOptionalAuth } from "../contexts/AuthContext";
 import { Key, Plus, Trash2, Copy, Check, RefreshCw, Eye, EyeOff, AlertCircle, Zap, Shield, Code } from "lucide-react";
 
 interface ApiKeyRecord {
@@ -17,7 +17,7 @@ function fmt(date: string) {
 }
 
 export default function ApiKeysPage() {
-  const { isSignedIn, getToken } = useAuth();
+  const { isSignedIn, getToken } = useOptionalAuth();
   const [keys, setKeys] = useState<ApiKeyRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);

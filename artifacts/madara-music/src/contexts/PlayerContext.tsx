@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useRef, useEffect, useCallback, ReactNode } from "react";
 import { Track } from "@workspace/api-client-react";
 import { useRecordPlay } from "@workspace/api-client-react";
-import { useUser } from "@clerk/react";
+import { useOptionalAuth } from "./AuthContext";
 
 // ── YouTube IFrame API types ────────────────────────────────────────────────
 declare global {
@@ -132,7 +132,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const userInitiatedLoadRef = useRef(false);
 
   const recordPlay = useRecordPlay();
-  const { user } = useUser();
+  const { user } = useOptionalAuth();
 
   // ── Polling currentTime (YT has no timeupdate event) ──────────────────────
   const startPolling = useCallback(() => {

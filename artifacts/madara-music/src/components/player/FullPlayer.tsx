@@ -2,7 +2,7 @@ import { usePlayer } from "../../contexts/PlayerContext";
 import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Repeat, Shuffle, ChevronDown, Heart, Mic, Radio } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
-import { useAuth } from "@clerk/react";
+import { useOptionalAuth } from "../../contexts/AuthContext";
 import { useAddFavorite, useRemoveFavorite, useCheckFavorite, getCheckFavoriteQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
@@ -44,7 +44,7 @@ export function FullPlayer({ isOpen, onClose }: { isOpen: boolean; onClose: () =
     autoplay, toggleAutoplay,
   } = usePlayer();
 
-  const { userId } = useAuth();
+  const { userId } = useOptionalAuth();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<Tab>("player");
 
