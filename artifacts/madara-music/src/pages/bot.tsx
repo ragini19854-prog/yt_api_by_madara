@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   Check, Copy, Terminal, Zap, Music, Bot, ChevronDown, ChevronUp,
-  Wifi, Shield, Server, Send, AlertTriangle, Clock
+  Wifi, Shield, Server, Send, AlertTriangle, Clock, Key
 } from "lucide-react";
 
 // ─── Discord Bot Code ──────────────────────────────────────────────────────────
@@ -46,9 +46,12 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 # ─── Configuration ────────────────────────────────────────────────────────────
 TOKEN          = "YOUR_DISCORD_BOT_TOKEN"        # discord.dev/applications
 MADARA_API_URL = "https://YOUR_DOMAIN/api"       # Your Madara Music domain
+MADARA_API_KEY = "YOUR_API_KEY_HERE"             # Generate at MADARA_API_URL/../api-keys (sign in first)
 PREFIX         = "!"
 KEEPALIVE_PORT = 8080                            # Port for UptimeRobot pings
 # ──────────────────────────────────────────────────────────────────────────────
+
+_MADARA_HEADERS = {"X-API-Key": MADARA_API_KEY}
 
 # !! ─────────────────────────────────────────────────────── !!
 # !! DO NOT MODIFY ANYTHING BETWEEN THESE LINES             !!
@@ -82,7 +85,7 @@ _anti_tamper_check()  # DO NOT REMOVE THIS LINE
 # ─── 24/7 Keep-alive server (ping this with UptimeRobot) ──────────────────────
 class _PingHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        body = b"Madara Music Bot — Online 24/7"
+        body = "Madara Music Bot - Online 24/7".encode("ascii")
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")
         self.send_header("Content-Length", str(len(body)))
@@ -126,12 +129,13 @@ CRIMSON = 0xDC143C
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async def madara_search(query: str) -> dict | None:
-    """Search Madara Music YouTube API — full songs, no 30-second limit."""
+    """Search Madara Music YouTube API — full songs, unlimited (API key)."""
     try:
         async with aiohttp.ClientSession() as s:
             async with s.get(
-                f"{MADARA_API_URL}/music/youtube/search",
+                f"{MADARA_API_URL}/v1/youtube/search",
                 params={"q": query, "limit": 5},
+                headers=_MADARA_HEADERS,
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as r:
                 if r.status == 200:
@@ -147,8 +151,9 @@ async def madara_related(video_id: str) -> list[dict]:
     try:
         async with aiohttp.ClientSession() as s:
             async with s.get(
-                f"{MADARA_API_URL}/music/youtube/related",
+                f"{MADARA_API_URL}/v1/youtube/related",
                 params={"videoId": video_id, "limit": 5},
+                headers=_MADARA_HEADERS,
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as r:
                 if r.status == 200:
@@ -437,7 +442,10 @@ from telegram.ext import (
 # ─── Configuration ────────────────────────────────────────────────────────────
 TELEGRAM_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"      # @BotFather on Telegram
 MADARA_API_URL  = "https://YOUR_DOMAIN/api"     # Your Madara Music domain
+MADARA_API_KEY  = "YOUR_API_KEY_HERE"           # Generate at MADARA_API_URL/../api-keys (sign in first)
 KEEPALIVE_PORT  = 8080                          # For UptimeRobot 24/7 pings
+
+_MADARA_HEADERS = {"X-API-Key": MADARA_API_KEY}
 # ──────────────────────────────────────────────────────────────────────────────
 
 # !! ─────────────────────────────────────────────────────── !!
@@ -470,7 +478,7 @@ _anti_tamper_check()  # DO NOT REMOVE THIS LINE
 # ─── 24/7 Keep-alive (ping with UptimeRobot) ──────────────────────────────────
 class _PingHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        body = b"Madara Music Telegram Bot — Online 24/7"
+        body = "Madara Music Telegram Bot - Online 24/7".encode("ascii")
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")
         self.end_headers()
@@ -502,12 +510,13 @@ _tg_last_video_id: dict[int, str] = {}   # videoId of last played track per chat
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async def madara_search(query: str) -> dict | None:
-    """Search Madara Music YouTube API — full songs, no 30-second limit."""
+    """Search Madara Music YouTube API — full songs, unlimited (API key)."""
     try:
         async with aiohttp.ClientSession() as s:
             async with s.get(
-                f"{MADARA_API_URL}/music/youtube/search",
+                f"{MADARA_API_URL}/v1/youtube/search",
                 params={"q": query, "limit": 5},
+                headers=_MADARA_HEADERS,
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as r:
                 if r.status == 200:
@@ -523,8 +532,9 @@ async def madara_related_tg(video_id: str) -> dict | None:
     try:
         async with aiohttp.ClientSession() as s:
             async with s.get(
-                f"{MADARA_API_URL}/music/youtube/related",
+                f"{MADARA_API_URL}/v1/youtube/related",
                 params={"videoId": video_id, "limit": 3},
+                headers=_MADARA_HEADERS,
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as r:
                 if r.status == 200:
@@ -537,11 +547,11 @@ async def madara_related_tg(video_id: str) -> dict | None:
 
 async def madara_download(video_id: str) -> str | None:
     """Download full song via Madara Music API and return temp file path."""
-    url = f"{MADARA_API_URL}/music/youtube/download?videoId={video_id}"
+    url = f"{MADARA_API_URL}/v1/youtube/download?videoId={video_id}"
     path = f"/tmp/madara_{video_id}.webm"
     try:
         async with aiohttp.ClientSession() as s:
-            async with s.get(url, timeout=aiohttp.ClientTimeout(total=300)) as r:
+            async with s.get(url, headers=_MADARA_HEADERS, timeout=aiohttp.ClientTimeout(total=300)) as r:
                 if r.status != 200:
                     return None
                 with open(path, "wb") as f:
@@ -706,8 +716,9 @@ async def cmd_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         async with aiohttp.ClientSession() as s:
             async with s.get(
-                f"{MADARA_API_URL}/music/youtube/search",
+                f"{MADARA_API_URL}/v1/youtube/search",
                 params={"q": query, "limit": 5},
+                headers=_MADARA_HEADERS,
             ) as r:
                 results = await r.json() if r.status == 200 else []
     except Exception:
@@ -860,22 +871,25 @@ const SETUP_STEPS = {
   discord: [
     { num: "01", title: "Create a Discord Bot", desc: "discord.com/developers → New Application → Bot → Copy Token. Enable \"Message Content Intent\" and all Privileged Intents." },
     { num: "02", title: "Install dependencies", code: "pip install discord.py yt-dlp aiohttp PyNaCl", desc: "Also install ffmpeg (see file header for OS-specific instructions)." },
-    { num: "03", title: "Set your config", desc: "Edit TOKEN and MADARA_API_URL at the top of youtube.py. Replace with your bot token and your Madara Music domain." },
-    { num: "04", title: "Invite the bot", desc: "OAuth2 → URL Generator. Scopes: bot. Permissions: Send Messages, Connect, Speak, Embed Links." },
-    { num: "05", title: "Run 24/7", code: "python youtube.py", desc: "Add your bot's URL (port 8080) to UptimeRobot.com — free pings every 5 min keep it alive 24/7." },
+    { num: "03", title: "Generate an API key", desc: "Sign in on your deployed Madara Music site and open the API Keys page. Click \"Generate Key\" and copy it — it's shown in full only once." },
+    { num: "04", title: "Set your config", desc: "Edit TOKEN, MADARA_API_URL, and MADARA_API_KEY at the top of youtube.py. Replace with your bot token, your Madara Music domain, and the key you just generated." },
+    { num: "05", title: "Invite the bot", desc: "OAuth2 → URL Generator. Scopes: bot. Permissions: Send Messages, Connect, Speak, Embed Links." },
+    { num: "06", title: "Run 24/7", code: "python youtube.py", desc: "Add your bot's URL (port 8080) to UptimeRobot.com — free pings every 5 min keep it alive 24/7." },
   ],
   telegram: [
     { num: "01", title: "Create a Telegram Bot", desc: "Open Telegram → @BotFather → /newbot → Copy the API token." },
     { num: "02", title: "Install dependencies", code: "pip install python-telegram-bot yt-dlp aiohttp", desc: "Also install ffmpeg on your system." },
-    { num: "03", title: "Set your config", desc: "Edit TELEGRAM_TOKEN and MADARA_API_URL at the top of telegram.py." },
-    { num: "04", title: "Run 24/7", code: "python telegram.py", desc: "Add your bot's URL (port 8080) to UptimeRobot.com for free 24/7 uptime." },
+    { num: "03", title: "Generate an API key", desc: "Sign in on your deployed Madara Music site and open the API Keys page. Click \"Generate Key\" and copy it — it's shown in full only once." },
+    { num: "04", title: "Set your config", desc: "Edit TELEGRAM_TOKEN, MADARA_API_URL, and MADARA_API_KEY at the top of telegram.py." },
+    { num: "05", title: "Run 24/7", code: "python telegram.py", desc: "Add your bot's URL (port 8080) to UptimeRobot.com for free 24/7 uptime." },
   ],
   telegramvc: [
     { num: "01", title: "Fork or clone a VC bot", desc: "Fork madara_x_radha (or any pytgcalls bot). This Youtube.py replaces its platforms/Youtube.py file." },
     { num: "02", title: "Replace platforms/Youtube.py", desc: "Copy this file into your bot's platforms/ folder. It replaces the original ShrutiAPI download with your own Madara Music API — same interface, no other files change." },
-    { num: "03", title: "Set MADARA_API_URL", desc: "Add one line to your .env: MADARA_API_URL=https://your-deployed-site.replit.app — that's the only config change needed in this file." },
-    { num: "04", title: "Install dependencies", code: "pip install -r requirements.txt", desc: "Python 3.10+, pyrogram, pytgcalls, aiohttp, yt-dlp, and ffmpeg (system package)." },
-    { num: "05", title: "Run your bot", code: "python -m YourBotModule", desc: "All download/search calls in the bot now go through your Madara Music API instead of any third-party service." },
+    { num: "03", title: "Generate an API key", desc: "Sign in on your deployed Madara Music site and open the API Keys page. Click \"Generate Key\" and copy it — it's shown in full only once." },
+    { num: "04", title: "Set MADARA_API_URL and MADARA_API_KEY", desc: "Add two lines to your .env: MADARA_API_URL=https://your-deployed-site.replit.app and MADARA_API_KEY=<the key you just generated>." },
+    { num: "05", title: "Install dependencies", code: "pip install -r requirements.txt", desc: "Python 3.10+, pyrogram, pytgcalls, aiohttp, yt-dlp, and ffmpeg (system package)." },
+    { num: "06", title: "Run your bot", code: "python -m YourBotModule", desc: "All search/download calls now go through your Madara Music API's unlimited YouTube search, authenticated with your API key." },
   ],
   manager: [
     { num: "01", title: "List your tokens", desc: "Create tokens.txt and add one bot token per line — up to 100+ tokens supported." },
@@ -932,6 +946,11 @@ const TELEGRAM_VC_BOT_CODE = `# ────────────────
 # Place this file at: YourBot/platforms/Youtube.py
 # Powered by Madara Music (https://madara-music.replit.app)
 # Architecture: ShuklaMusic / madara_x_radha style
+#
+# Requires an API key for unlimited song search/download:
+#   1. Sign in on your deployed Madara Music site
+#   2. Go to the API Keys page and click "Generate Key"
+#   3. Set MADARA_API_KEY in your .env alongside MADARA_API_URL
 # ──────────────────────────────────────────────────────────────────────────
 # !! WARNING !! — DO NOT REMOVE OR MODIFY THE CREDIT BELOW
 # !! Powered by Madara Music — https://madara-music.replit.app
@@ -970,6 +989,20 @@ _verify()
 # Set MADARA_API_URL in your .env or environment before running
 MADARA_API_URL = os.environ.get("MADARA_API_URL", "https://your-site.replit.app")
 
+# Your Madara Music API key — required for unlimited song search/download.
+# Get one by signing in on your Madara Music site and visiting the
+# "API Keys" page (/api-keys), then set it in your .env as MADARA_API_KEY.
+MADARA_API_KEY = os.environ.get("MADARA_API_KEY", "YOUR_API_KEY_HERE")
+
+if MADARA_API_KEY == "YOUR_API_KEY_HERE":
+    print(
+        "[Madara Music] WARNING: MADARA_API_KEY is not set. "
+        "Sign in on your Madara Music site -> API Keys -> Generate Key, "
+        "then set MADARA_API_KEY in your .env. Requests will fail with 401 until then."
+    )
+
+_MADARA_HEADERS = {"X-API-Key": MADARA_API_KEY}
+
 DOWNLOAD_DIR = "downloads"
 
 
@@ -979,15 +1012,19 @@ def time_to_seconds(time):
 
 
 async def search_madara(query: str, limit: int = 1) -> list:
-    """Search tracks via Madara Music API (iTunes + YouTube, no API key)."""
-    url = f"{MADARA_API_URL}/api/music/youtube/search"
+    """Search tracks via Madara Music API (unlimited YouTube search, requires MADARA_API_KEY)."""
+    url = f"{MADARA_API_URL}/api/v1/youtube/search"
     try:
         async with aiohttp.ClientSession() as s:
             async with s.get(
                 url,
                 params={"q": query, "limit": limit},
+                headers=_MADARA_HEADERS,
                 timeout=aiohttp.ClientTimeout(total=20),
             ) as r:
+                if r.status == 401:
+                    print("[Madara Music] 401 Unauthorized — check MADARA_API_KEY.")
+                    return []
                 if r.status != 200:
                     return []
                 data = await r.json()
@@ -1008,14 +1045,18 @@ async def download_song(link: str) -> str:
     if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
         return file_path  # cached
 
-    url = f"{MADARA_API_URL}/api/music/youtube/download"
+    url = f"{MADARA_API_URL}/api/v1/youtube/download"
     try:
         async with aiohttp.ClientSession() as s:
             async with s.get(
                 url,
                 params={"videoId": video_id},
+                headers=_MADARA_HEADERS,
                 timeout=aiohttp.ClientTimeout(total=300),
             ) as r:
+                if r.status == 401:
+                    print("[Madara Music] 401 Unauthorized — check MADARA_API_KEY.")
+                    return None
                 if r.status != 200:
                     return None
                 with open(file_path, "wb") as f:
@@ -1217,12 +1258,13 @@ class YouTubeAPI:
         vid = link.split("v=")[-1].split("&")[0] if "v=" in link else link
         if not vid or len(vid) < 5:
             return []
-        url = f"{MADARA_API_URL}/api/music/youtube/related"
+        url = f"{MADARA_API_URL}/api/v1/youtube/related"
         try:
             async with aiohttp.ClientSession() as s:
                 async with s.get(
                     url,
                     params={"videoId": vid, "limit": limit},
+                    headers=_MADARA_HEADERS,
                     timeout=aiohttp.ClientTimeout(total=15),
                 ) as r:
                     if r.status != 200:
@@ -1403,7 +1445,9 @@ export default function BotPage() {
         {[
           { icon: <Clock className="w-3.5 h-3.5" />,    label: "24/7 Uptime" },
           { icon: <Server className="w-3.5 h-3.5" />,   label: "100+ Bots" },
-          { icon: <Zap className="w-3.5 h-3.5" />,      label: "No API Key" },
+          tab === "manager"
+            ? { icon: <Zap className="w-3.5 h-3.5" />, label: "No API Key" }
+            : { icon: <Key className="w-3.5 h-3.5" />, label: "Unlimited Search (API Key)" },
           { icon: <Shield className="w-3.5 h-3.5" />,   label: "Anti-Tamper" },
           { icon: <Music className="w-3.5 h-3.5" />,    label: "iTunes + YouTube" },
           { icon: <Wifi className="w-3.5 h-3.5" />,     label: "Legal Proxy" },
@@ -1413,6 +1457,25 @@ export default function BotPage() {
           </span>
         ))}
       </div>
+
+      {tab !== "manager" && (
+        <div className="flex items-start gap-3 bg-primary/5 border border-primary/20 rounded-2xl p-5">
+          <Key className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-white font-semibold text-sm">Unlimited song search needs an API key</p>
+            <p className="text-white/50 text-sm mt-1">
+              This bot calls your Madara Music API's unlimited YouTube search, so it needs a personal API key.
+              Sign in and generate one on the API Keys page, then set it as <code className="bg-white/10 px-1 rounded text-xs">MADARA_API_KEY</code> in your .env.
+            </p>
+            <a
+              href="/api-keys"
+              className="inline-flex items-center gap-1.5 mt-3 text-sm font-medium text-primary hover:text-white transition-colors"
+            >
+              Get your API key <ChevronDown className="w-3.5 h-3.5 -rotate-90" />
+            </a>
+          </div>
+        </div>
+      )}
 
       {/* Anti-tamper notice */}
       <div className="flex items-start gap-3 bg-yellow-500/5 border border-yellow-500/20 rounded-2xl p-5">
