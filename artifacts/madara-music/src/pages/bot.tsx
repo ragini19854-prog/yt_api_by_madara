@@ -987,7 +987,7 @@ _verify()
 
 # Your deployed Madara Music website URL (no trailing slash)
 # Set MADARA_API_URL in your .env or environment before running
-MADARA_API_URL = os.environ.get("MADARA_API_URL", "https://your-site.replit.app")
+MADARA_API_URL = os.environ.get("MADARA_API_URL", "https://your-site.replit.app").rstrip("/")
 
 # Your Madara Music API key — required for unlimited song search/download.
 # Get one by signing in on your Madara Music site and visiting the
@@ -1023,13 +1023,28 @@ async def search_madara(query: str, limit: int = 1) -> list:
                 timeout=aiohttp.ClientTimeout(total=20),
             ) as r:
                 if r.status == 401:
-                    print("[Madara Music] 401 Unauthorized — check MADARA_API_KEY.")
+                    body = await r.text()
+                    print(f"[Madara Music] 401 Unauthorized on {url} — check MADARA_API_KEY. Response: {body[:300]}")
                     return []
                 if r.status != 200:
+                    body = await r.text()
+                    print(f"[Madara Music] search failed: HTTP {r.status} on {url}. Response: {body[:300]}")
                     return []
-                data = await r.json()
-                return data if isinstance(data, list) else data.get("results", [])
-    except Exception:
+                try:
+                    data = await r.json()
+                except Exception as je:
+                    body = await r.text()
+                    print(f"[Madara Music] search returned non-JSON response from {url}: {je}. Body: {body[:300]}")
+                    return []
+                results = data if isinstance(data, list) else data.get("results", [])
+                if not results:
+                    print(f"[Madara Music] search for '{query}' returned 0 results from {url}")
+                return results
+    except aiohttp.ClientConnectorError as e:
+        print(f"[Madara Music] could not connect to {url} — check MADARA_API_URL is correct and reachable: {e}")
+        return []
+    except Exception as e:
+        print(f"[Madara Music] search_madara unexpected error on {url}: {type(e).__name__}: {e}")
         return []
 
 
@@ -1055,17 +1070,25 @@ async def download_song(link: str) -> str:
                 timeout=aiohttp.ClientTimeout(total=300),
             ) as r:
                 if r.status == 401:
-                    print("[Madara Music] 401 Unauthorized — check MADARA_API_KEY.")
+                    body = await r.text()
+                    print(f"[Madara Music] 401 Unauthorized on {url} — check MADARA_API_KEY. Response: {body[:300]}")
                     return None
                 if r.status != 200:
+                    body = await r.text()
+                    print(f"[Madara Music] download failed: HTTP {r.status} on {url}. Response: {body[:300]}")
                     return None
                 with open(file_path, "wb") as f:
                     async for chunk in r.content.iter_chunked(131072):
                         f.write(chunk)
         if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
             return file_path
+        print(f"[Madara Music] download for {video_id} produced an empty/missing file")
         return None
-    except Exception:
+    except aiohttp.ClientConnectorError as e:
+        print(f"[Madara Music] could not connect to {url} — check MADARA_API_URL is correct and reachable: {e}")
+        return None
+    except Exception as e:
+        print(f"[Madara Music] download_song unexpected error on {url}: {type(e).__name__}: {e}")
         if os.path.exists(file_path):
             try:
                 os.remove(file_path)
@@ -1268,10 +1291,16 @@ class YouTubeAPI:
                     timeout=aiohttp.ClientTimeout(total=15),
                 ) as r:
                     if r.status != 200:
+                        body = await r.text()
+                        print(f"[Madara Music] related failed: HTTP {r.status} on {url}. Response: {body[:300]}")
                         return []
                     data = await r.json()
                     return data if isinstance(data, list) else []
-        except Exception:
+        except aiohttp.ClientConnectorError as e:
+            print(f"[Madara Music] could not connect to {url} — check MADARA_API_URL is correct and reachable: {e}")
+            return []
+        except Exception as e:
+            print(f"[Madara Music] related() unexpected error on {url}: {type(e).__name__}: {e}")
             return []
 
     async def download(
